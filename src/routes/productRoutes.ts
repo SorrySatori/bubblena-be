@@ -23,6 +23,9 @@ router.post('/', async (req, res) => {
     inStock,
     stockCount,
     imageUrl,
+    storageMethod,
+    bathImageUrl,
+    videoUrl,
   } = req.body
 
   try {
@@ -34,6 +37,9 @@ router.post('/', async (req, res) => {
       inStock,
       stockCount,
       imageUrl,
+      storageMethod,
+      bathImageUrl,
+      videoUrl,
     })
 
     const savedProduct = await newProduct.save()
