@@ -10,6 +10,7 @@ export interface IProduct extends Document {
   imageUrl?: string
   createdAt: Date
   updatedAt: Date
+  isDeleted?: boolean
 }
 
 const ProductSchema: Schema<IProduct> = new Schema(
@@ -21,6 +22,7 @@ const ProductSchema: Schema<IProduct> = new Schema(
     inStock: { type: Boolean, default: true },
     stockCount: { type: Number, required: true },
     imageUrl: { type: String },
+    isDeleted: { type: Boolean, default: false },
   },
   {
     timestamps: true,

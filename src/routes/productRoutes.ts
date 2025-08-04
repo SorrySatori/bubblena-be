@@ -3,27 +3,17 @@ import Product from '../models/Product'
 
 const router = express.Router()
 
+//GET 
 router.get('/', async (req, res) => {
   try {
-    const products = await Product.find()
+    const products = await Product.find({ isDeleted: { $ne: true } })
     res.json(products)
-  } catch (err) {
+  } catch (error) {
     res.status(500).json({ message: 'Chyba při načítání produktů' })
   }
 })
 
-router.get('/:id', async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id)
-    if (!product) {
-      return res.status(404).json({ message: 'Produkt nenalezen' })
-    }
-    res.json(product)
-  } catch (err) {
-    res.status(500).json({ message: 'Chyba při načítání produktu' })
-  }
-})
-
+//POST
 router.post('/', async (req, res) => {
   const {
     name,
@@ -53,6 +43,7 @@ router.post('/', async (req, res) => {
   }
 })
 
+// PUT
 router.put('/:id', async (req, res) => {
   try {
     const updatedProduct = await Product.findByIdAndUpdate(
@@ -69,6 +60,7 @@ router.put('/:id', async (req, res) => {
   }
 })
 
+//DELETE
 router.delete('/:id', async (req, res) => {
   try {
     const deleted = await Product.findByIdAndDelete(req.params.id)
@@ -78,6 +70,44 @@ router.delete('/:id', async (req, res) => {
     res.json({ message: 'Produkt smazán' })
   } catch (err) {
     res.status(500).json({ message: 'Chyba při mazání produktu', error: err })
+  }
+})
+
+//SOFT DELETE
+// @route   PATCH /api/products/:id/soft-delete
+router.patch('/:id/soft-delete', async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id)
+
+    if (!product || product.isDeleted) {
+      return res.status(404).json({ message: 'Produkt nenalezen' })
+    }
+
+    product.isDeleted = true
+    await product.save()
+
+    res.json({ message: 'Produkt byl soft smazán' })
+  } catch (error) {
+    res.status(500).json({ message: 'Chyba při soft mazání produktu' })
+  }
+})
+
+//UNDELETE
+// @route   PATCH /api/products/:id/undelete
+router.patch('/:id/undelete', async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id)
+
+    if (!product || !product.isDeleted) {
+      return res.status(404).json({ message: 'Produkt nenalezen nebo není smazán' })
+    }
+
+    product.isDeleted = false
+    await product.save()
+
+    res.json({ message: 'Produkt byl obnoven (undelete)', product })
+  } catch (error) {
+    res.status(500).json({ message: 'Chyba při obnově produktu', error })
   }
 })
 
