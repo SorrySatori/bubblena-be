@@ -1,10 +1,11 @@
 import express from 'express'
 import Product from '../models/Product'
+import { apiKeyAuth } from '../middleware/apikeyAuth'
 
 const router = express.Router()
 
 //GET 
-router.get('/', async (req, res) => {
+router.get('/',apiKeyAuth, async (req, res) => {
   try {
     const products = await Product.find({ isDeleted: { $ne: true } })
     res.json(products)
@@ -14,7 +15,7 @@ router.get('/', async (req, res) => {
 })
 
 //POST
-router.post('/', async (req, res) => {
+router.post('/', apiKeyAuth, async (req, res) => {
   const {
     name,
     shortDescription,
@@ -50,7 +51,7 @@ router.post('/', async (req, res) => {
 })
 
 // PUT
-router.put('/:id', async (req, res) => {
+router.put('/:id', apiKeyAuth, apiKeyAuth, async (req, res) => {
   try {
     const updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
@@ -67,7 +68,7 @@ router.put('/:id', async (req, res) => {
 })
 
 //DELETE
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', apiKeyAuth, async (req, res) => {
   try {
     const deleted = await Product.findByIdAndDelete(req.params.id)
     if (!deleted) {
@@ -81,7 +82,7 @@ router.delete('/:id', async (req, res) => {
 
 //SOFT DELETE
 // @route   PATCH /api/products/:id/soft-delete
-router.patch('/:id/soft-delete', async (req, res) => {
+router.patch('/:id/soft-delete', apiKeyAuth, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id)
 
@@ -100,7 +101,7 @@ router.patch('/:id/soft-delete', async (req, res) => {
 
 //UNDELETE
 // @route   PATCH /api/products/:id/undelete
-router.patch('/:id/undelete', async (req, res) => {
+router.patch('/:id/undelete', apiKeyAuth, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id)
 
