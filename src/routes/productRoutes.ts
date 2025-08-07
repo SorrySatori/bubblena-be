@@ -1,11 +1,11 @@
-import express from 'express'
+import express, { Request, Response } from 'express'
 import Product from '../models/Product'
 import { apiKeyAuth } from '../middleware/apikeyAuth'
 
 const router = express.Router()
 
 //GET 
-router.get('/',apiKeyAuth, async (req, res) => {
+router.get('/',apiKeyAuth, async (req: Request, res: Response) => {
   try {
     const products = await Product.find({ isDeleted: { $ne: true } })
     res.json(products)
@@ -15,7 +15,7 @@ router.get('/',apiKeyAuth, async (req, res) => {
 })
 
 //POST
-router.post('/', apiKeyAuth, async (req, res) => {
+router.post('/', apiKeyAuth, async (req: Request, res: Response) => {
   const {
     name,
     shortDescription,
@@ -51,7 +51,7 @@ router.post('/', apiKeyAuth, async (req, res) => {
 })
 
 // PUT
-router.put('/:id', apiKeyAuth, apiKeyAuth, async (req, res) => {
+router.put('/:id', apiKeyAuth, apiKeyAuth, async (req: Request, res: Response) => {
   try {
     const updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
@@ -68,7 +68,7 @@ router.put('/:id', apiKeyAuth, apiKeyAuth, async (req, res) => {
 })
 
 //DELETE
-router.delete('/:id', apiKeyAuth, async (req, res) => {
+router.delete('/:id', apiKeyAuth, async (req: Request, res: Response) => {
   try {
     const deleted = await Product.findByIdAndDelete(req.params.id)
     if (!deleted) {
@@ -82,7 +82,7 @@ router.delete('/:id', apiKeyAuth, async (req, res) => {
 
 //SOFT DELETE
 // @route   PATCH /api/products/:id/soft-delete
-router.patch('/:id/soft-delete', apiKeyAuth, async (req, res) => {
+router.patch('/:id/soft-delete', apiKeyAuth, async (req:Request, res: Response) => {
   try {
     const product = await Product.findById(req.params.id)
 
@@ -101,7 +101,7 @@ router.patch('/:id/soft-delete', apiKeyAuth, async (req, res) => {
 
 //UNDELETE
 // @route   PATCH /api/products/:id/undelete
-router.patch('/:id/undelete', apiKeyAuth, async (req, res) => {
+router.patch('/:id/undelete', apiKeyAuth, async (req: Request, res: Response) => {
   try {
     const product = await Product.findById(req.params.id)
 
