@@ -12,14 +12,12 @@ dotenv.config()
 app.use(cors())
 app.use(express.json())
 
-// Ukázková route
 app.get('/', (req: Request, res: Response) => {
   res.send('API běží!')
 })
 
 app.use('/api/products', productRoutes)
 
-// Připoj DB a spusť server
 connectDB().then(() => {
   app.listen(PORT, () => {
     console.log(`🚀 Server běží na http://localhost:${PORT}`)
