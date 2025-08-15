@@ -11,6 +11,7 @@ const PORT = process.env.PORT || 3000
 dotenv.config()
 app.use(cors())
 app.use(express.json())
+app.use('/images', express.static('public/images'))
 
 app.get('/', (req: Request, res: Response) => {
   res.send('API běží!')
