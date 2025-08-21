@@ -4,13 +4,26 @@ import { apiKeyAuth } from '../middleware/apikeyAuth'
 
 const router = express.Router()
 
-//GET 
+//GET all products
 router.get('/',apiKeyAuth, async (req: Request, res: Response) => {
   try {
     const products = await Product.find({ isDeleted: { $ne: true } })
     res.json(products)
   } catch (error) {
     res.status(500).json({ message: 'Chyba při načítání produktů' })
+  }
+})
+
+//GET single product by ID
+router.get('/:id', apiKeyAuth, async (req: Request, res: Response) => {
+  try {
+    const product = await Product.findOne({ _id: req.params.id, isDeleted: { $ne: true } })
+    if (!product) {
+      return res.status(404).json({ message: 'Produkt nenalezen' })
+    }
+    res.json(product)
+  } catch (error) {
+    res.status(500).json({ message: 'Chyba při načítání produktu' })
   }
 })
 
