@@ -20,7 +20,7 @@ app.get('/', (req: Request, res: Response) => {
 })
 
 app.use('/api/products', productRoutes)
-app.use("/cart", cartRoutes)
+app.use("/api/cart", cartRoutes)
 
 connectDB().then(() => {
   app.listen(PORT, () => {
