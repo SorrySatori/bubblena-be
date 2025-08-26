@@ -4,6 +4,8 @@ import dotenv from 'dotenv'
 import { connectDB } from './config/db'
 import cors from 'cors'
 import productRoutes from './routes/productRoutes'
+import cartRoutes from "./routes/cartRoutes";
+import cookieParser from "cookie-parser";
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -11,13 +13,14 @@ const PORT = process.env.PORT || 3000
 dotenv.config()
 app.use(cors())
 app.use(express.json())
-app.use('/images', express.static('public/images'))
+app.use(cookieParser())
 
 app.get('/', (req: Request, res: Response) => {
   res.send('API běží!')
 })
 
 app.use('/api/products', productRoutes)
+app.use("/cart", cartRoutes)
 
 connectDB().then(() => {
   app.listen(PORT, () => {
