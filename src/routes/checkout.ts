@@ -2,17 +2,17 @@
 import express from "express"
 import Stripe from "stripe"
 import dotenv from "dotenv"
+import { IProduct } from "../models/Product"
 
 dotenv.config()
 const router = express.Router()
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string)
 
-// POST /api/checkout/create-session
 router.post("/create-session", async (req, res) => {
   try {
     const body = req.body;
-    const lineItems = body?.items?.map((item) => ({
+    const lineItems = body?.items?.map((item: IProduct) => ({
       price_data: {
         currency: "czk",
         product_data: {
