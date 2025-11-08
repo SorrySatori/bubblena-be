@@ -16,7 +16,7 @@ export interface Cart extends Document {
 
 const CartItemSchema = new Schema<CartItem>({
   productId: { type: Schema.Types.ObjectId, ref: "Product", required: true },
-  variantId: { type: Schema.Types.ObjectId, ref: "Variant" },
+  variantId: { type: Number, ref: "Variant" },
   quantity: { type: Number, required: true, min: 1 },
 });
 
