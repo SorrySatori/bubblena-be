@@ -7,6 +7,7 @@ import productRoutes from './routes/productRoutes'
 import cartRoutes from "./routes/cartRoutes"
 import cookieParser from "cookie-parser"
 import checkoutRouter from "./routes/checkout"
+import packetaRoutes from "./routes/packeta"
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -23,6 +24,7 @@ app.get('/', (req: Request, res: Response) => {
 app.use('/api/products', productRoutes)
 app.use("/api/cart", cartRoutes)
 app.use("/api/checkout", checkoutRouter)
+app.use("/api/packeta", packetaRoutes)
 
 connectDB().then(() => {
   app.listen(PORT, () => {
