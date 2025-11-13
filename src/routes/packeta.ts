@@ -36,17 +36,8 @@ router.post("/create-shipment", async (req, res) => {
 
     res.status(200).send({ success: true, response: response.data });
   } catch (error) {
-    console.error("Packeta API chyba:", error.message);
-    if (error.response) {
-      console.error("Response data:", error.response.data);
-      console.error("Status:", error.response.status);
-    }
-
-    res.status(500).send({
-      success: false,
-      error: error.message,
-      details: error.response?.data || null,
-    })
+    console.error("Packeta API chyba:", error);
+    res.status(500).send({ success: false, message: "Chyba při vytváření zásilky v Packeta API." });
   }
 })
 
