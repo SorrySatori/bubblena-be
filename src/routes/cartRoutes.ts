@@ -18,7 +18,6 @@ router.post("/", async (req, res) => {
     res.json({ cartId });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Failed to create cart" });
   }
 });
 
@@ -26,13 +25,11 @@ router.get("/:cartId", async (req, res) => {
   try {
     const { cartId } = req.params;
     const cart = await CartModel.findOne({ cartId });
-
     if (!cart) return res.status(404).json({ message: "Cart not found" });
 
     res.json(cart);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch cart" });
+    console.error(err)
   }
 });
 
@@ -60,7 +57,6 @@ router.post("/:cartId/add", async (req, res) => {
     res.json(cart);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Failed to add item" });
   }
 });
 
@@ -84,7 +80,6 @@ router.post("/:cartId/remove", async (req, res) => {
     res.json(cart);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Failed to remove item" });
   }
 });
 
@@ -95,7 +90,6 @@ router.delete("/:cartId", async (req, res) => {
     res.json({ message: "Cart deleted" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Failed to delete cart" });
   }
 });
 
