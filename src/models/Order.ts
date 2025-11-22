@@ -105,6 +105,9 @@ const OrderSchema = new Schema<Order>(
         name: String,
         price: Number,
         quantity: Number,
+        variant: {
+          weight: Number,
+        },
         imageUrl: String,
       },
     ],

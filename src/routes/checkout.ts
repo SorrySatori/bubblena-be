@@ -24,6 +24,19 @@ router.post("/create-session", async (req, res) => {
       quantity: item.quantity,
     })) || []
 
+    if (body?.totals?.shipping) {
+      lineItems.push({
+        price_data: {
+          currency: "czk",
+          product_data: {
+            name: "Doprava",
+          },
+          unit_amount: Math.round(body.totals.shipping * 100),
+        },
+        quantity: 1,
+      })
+    }
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: lineItems,

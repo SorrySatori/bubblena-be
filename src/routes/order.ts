@@ -1,5 +1,5 @@
-import express from "express";
-import { OrderModel } from "../models/Order";
+import express from "express"
+import { OrderModel } from "../models/Order"
 
 const router = express.Router();
 
@@ -16,12 +16,10 @@ router.post("/create", async (req, res) => {
       totals,
       selectedPickupPoint,
     } = req.body
-    // 1️⃣ Validace dat
     if (!orderId) {
       return res.status(400).json({ error: "Missing required fields." })
     }
 
-    // 2️⃣ Uložení objednávky do MongoDB
     const newOrder = await OrderModel.create({
     orderId,
       customerInfo,
