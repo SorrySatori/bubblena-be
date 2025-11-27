@@ -18,8 +18,7 @@ export interface IProduct extends Document {
   category?: string;
   storageMethod?: string;
   variants: ProductVariant[]
-  price: number;
-  quantity: number;
+  ingredients: string;
   createdAt?: string;
   updatedAt?: string;
   isDeleted?: boolean;
