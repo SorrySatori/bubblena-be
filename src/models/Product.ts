@@ -23,7 +23,7 @@ export interface IProduct extends Document {
   updatedAt?: string;
   isDeleted?: boolean;
   quantity?: number;
-  price?: number;
+  price: number;
   weight?: number;
 }
 
