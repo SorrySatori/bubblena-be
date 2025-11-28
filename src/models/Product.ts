@@ -22,6 +22,9 @@ export interface IProduct extends Document {
   createdAt?: string;
   updatedAt?: string;
   isDeleted?: boolean;
+  quantity?: number;
+  price?: number;
+  weight?: number;
 }
 
 const ProductSchema: Schema<IProduct> = new Schema(
