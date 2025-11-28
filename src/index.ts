@@ -4,6 +4,7 @@ import dotenv from 'dotenv'
 import { connectDB } from './config/db'
 import cors from 'cors'
 import productRoutes from './routes/productRoutes'
+import steamerRoutes from './routes/steamerRoutes'
 import cartRoutes from "./routes/cartRoutes"
 import cookieParser from "cookie-parser"
 import checkoutRouter from "./routes/checkout"
@@ -23,6 +24,7 @@ app.get('/', (req: Request, res: Response) => {
 })
 
 app.use('/api/products', productRoutes)
+app.use('/api/steamers', steamerRoutes)
 app.use("/api/cart", cartRoutes)
 app.use("/api/checkout", checkoutRouter)
 app.use("/api/packeta", packetaRoutes)
