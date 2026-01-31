@@ -36,12 +36,11 @@ router.post("/create-session", async (req, res) => {
         quantity: 1,
       })
     }
-
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: lineItems,
       mode: "payment",
-      success_url: 'https://bubblena-fe.vercel.app/order-confirmation',
+      success_url: `https://bubblena-fe.vercel.app/order-confirmation?orderId=${body.orderId}`,
       cancel_url: 'https://bubblena-fe.vercel.app/cancel',
     });
 

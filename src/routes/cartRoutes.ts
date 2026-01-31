@@ -60,6 +60,25 @@ router.post("/:cartId/add", async (req, res) => {
   }
 });
 
+router.put("/:cartId/items", async (req, res) => {
+  try {
+    const { cartId } = req.params;
+    const { items } = req.body;
+
+    let cart = await CartModel.findOne({ cartId });
+    if (!cart) return res.status(404).json({ message: "Cart not found" });
+
+    // Replace all items with the new items array
+    cart.items = items || [];
+
+    await cart.save();
+    res.json(cart);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to update cart items" });
+  }
+});
+
 router.post("/:cartId/remove", async (req, res) => {
   try {
     const { cartId } = req.params;
