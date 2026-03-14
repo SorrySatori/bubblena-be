@@ -40,6 +40,7 @@ router.post("/create-session", async (req, res) => {
       payment_method_types: ["card"],
       line_items: lineItems,
       mode: "payment",
+      customer_email: body?.customerInfo?.email || undefined,
       success_url: `https://bubblena-fe.vercel.app/order-confirmation?orderId=${body.orderId}`,
       cancel_url: 'https://bubblena-fe.vercel.app/cancel',
     });
