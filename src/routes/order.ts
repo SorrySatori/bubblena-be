@@ -1,5 +1,8 @@
 import express from "express"
 import { OrderModel } from "../models/Order"
+import Product from "../models/Product"
+import Steamer from "../models/Steamer"
+import DamagedProduct from "../models/DamagedProduct"
 
 const router = express.Router();
 
@@ -93,6 +96,50 @@ router.post("/create", async (req, res) => {
       status: "pending",
     })
     const savedOrder = await newOrder.save()
+
+    // Reduce stock for each ordered item
+    for (const item of items) {
+      try {
+        if (item.id.startsWith('damaged-')) {
+          // Damaged product: id format is "damaged-{_id}"
+          const damagedId = item.id.replace('damaged-', '')
+          await DamagedProduct.findByIdAndUpdate(damagedId, {
+            $inc: { stockCount: -item.quantity },
+          })
+          // Update inStock flag if needed
+          const updated = await DamagedProduct.findById(damagedId)
+          if (updated && updated.stockCount <= 0) {
+            updated.inStock = false
+            await updated.save()
+          }
+        } else if (item.id.includes('-')) {
+          // Bath bomb: id format is "{productId}-{variantWeight}"
+          const [productId, variantWeight] = item.id.split('-')
+          const product = await Product.findById(productId)
+          if (product && product.variants) {
+            const variants = product.variants as any[]
+            const variant = variants.find((v: any) => v.weight === parseFloat(variantWeight))
+            if (variant) {
+              variant.stockCount = Math.max(0, variant.stockCount - item.quantity)
+              variant.inStock = variant.stockCount > 0
+              await product.save()
+            }
+          }
+        } else {
+          // Steamer: id is the steamer _id
+          await Steamer.findByIdAndUpdate(item.id, {
+            $inc: { stockCount: -item.quantity },
+          })
+          const updated = await Steamer.findById(item.id)
+          if (updated && updated.stockCount <= 0) {
+            updated.inStock = false
+            await updated.save()
+          }
+        }
+      } catch (err) {
+        console.error(`Error reducing stock for item ${item.id}:`, err)
+      }
+    }
 
     res.status(201).json({ success: true, order: savedOrder })
   } catch (error: any) {
