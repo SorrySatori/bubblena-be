@@ -10,6 +10,7 @@ import cartRoutes from "./routes/cartRoutes"
 import cookieParser from "cookie-parser"
 import checkoutRouter from "./routes/checkout"
 import packetaRoutes from "./routes/packeta"
+import glsRoutes from "./routes/gls"
 import ordersRouter from "./routes/order"
 
 const app = express()
@@ -30,6 +31,7 @@ app.use('/api/damaged-products', damagedProductRoutes)
 app.use("/api/cart", cartRoutes)
 app.use("/api/checkout", checkoutRouter)
 app.use("/api/packeta", packetaRoutes)
+app.use("/api/gls", glsRoutes)
 app.use("/api/order", ordersRouter)
 
 connectDB().then(() => {
