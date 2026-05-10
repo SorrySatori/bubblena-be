@@ -12,6 +12,7 @@ import checkoutRouter from "./routes/checkout"
 import packetaRoutes from "./routes/packeta"
 import glsRoutes from "./routes/gls"
 import ordersRouter from "./routes/order"
+import discountCodeRoutes from "./routes/discountCodeRoutes"
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -33,6 +34,7 @@ app.use("/api/checkout", checkoutRouter)
 app.use("/api/packeta", packetaRoutes)
 app.use("/api/gls", glsRoutes)
 app.use("/api/order", ordersRouter)
+app.use("/api/discount-codes", discountCodeRoutes)
 
 connectDB().then(() => {
   app.listen(PORT, () => {
