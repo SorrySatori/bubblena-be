@@ -120,11 +120,52 @@ const reduceStockForItem = async (item: StockItem) => {
   }
 }
 
+const restoreStockForItem = async (item: StockItem) => {
+  if (item.id.startsWith("damaged-")) {
+    const damagedId = item.id.replace("damaged-", "")
+    await DamagedProduct.findByIdAndUpdate(damagedId, {
+      $inc: { stockCount: item.quantity },
+      $set: { inStock: true },
+    })
+    return
+  }
+
+  if (item.id.includes("-")) {
+    const [productId, variantWeight] = item.id.split("-")
+    const weight = Number(variantWeight)
+
+    if (!productId || !Number.isFinite(weight)) return
+
+    await Product.findOneAndUpdate(
+      { _id: productId, "variants.weight": weight },
+      {
+        $inc: { "variants.$.stockCount": item.quantity },
+        $set: { "variants.$.inStock": true },
+      }
+    )
+    return
+  }
+
+  await Steamer.findByIdAndUpdate(item.id, {
+    $inc: { stockCount: item.quantity },
+    $set: { inStock: true },
+  })
+}
+
 const reduceStockForOrder = async (items: StockItem[]) => {
   const stockItems = mergeStockItems(items)
+  const reducedItems: StockItem[] = []
 
-  for (const item of stockItems) {
-    await reduceStockForItem(item)
+  try {
+    for (const item of stockItems) {
+      await reduceStockForItem(item)
+      reducedItems.push(item)
+    }
+  } catch (error) {
+    for (const item of reducedItems.reverse()) {
+      await restoreStockForItem(item)
+    }
+    throw error
   }
 }
 
@@ -137,7 +178,7 @@ const getOrderDiscount = async (
 
   const discountCode = await findValidDiscountCode(code)
   if (!discountCode) {
-    throw new Error("Invalid discount code")
+    throw new Error("Slevový kód není platný nebo již vypršel.")
   }
 
   return {
@@ -168,7 +209,7 @@ const markIndividualDiscountCodeUsed = async (discountCode: IDiscountCode, order
   )
 
   if (!usedCode) {
-    throw new Error("Discount code has already been used")
+    throw new Error("Slevový kód již byl použit.")
   }
 
   return String(usedCode._id)
@@ -262,21 +303,6 @@ router.post("/create", async (req, res) => {
     }
 
     const orderDiscount = await getOrderDiscount(discount, totals)
-    const markedDiscountCodeId = orderDiscount
-      ? await markIndividualDiscountCodeUsed(orderDiscount.discountCode, orderId)
-      : null
-
-    try {
-      await reduceStockForOrder(items)
-    } catch (error) {
-      if (markedDiscountCodeId) {
-        await DiscountCodeModel.findByIdAndUpdate(markedDiscountCodeId, {
-          $unset: { usedAt: "", usedByOrderId: "" },
-        })
-      }
-      throw error
-    }
-
     const subtotal = roundMoney(Number(totals?.subtotal) || 0)
     const shipping = roundMoney(Number(totals?.shipping) || 0)
     const paymentSurcharge = roundMoney(Number(totals?.paymentSurcharge) || 0)
@@ -303,6 +329,24 @@ router.post("/create", async (req, res) => {
     })
     const savedOrder = await newOrder.save()
 
+    let markedDiscountCodeId: string | null = null
+    try {
+      markedDiscountCodeId = orderDiscount
+        ? await markIndividualDiscountCodeUsed(orderDiscount.discountCode, orderId)
+        : null
+      await reduceStockForOrder(items)
+    } catch (error) {
+      await OrderModel.deleteOne({ orderId })
+
+      if (markedDiscountCodeId) {
+        await DiscountCodeModel.findByIdAndUpdate(markedDiscountCodeId, {
+          $unset: { usedAt: "", usedByOrderId: "" },
+        })
+      }
+
+      throw error
+    }
+
     res.status(201).json({ success: true, order: savedOrder })
   } catch (error: any) {
     console.error("Error creating order:", error)
@@ -310,7 +354,7 @@ router.post("/create", async (req, res) => {
       return res.status(409).json({ error: error.message })
     }
 
-    if (error?.message === "Invalid discount code" || error?.message === "Discount code has already been used") {
+    if (error?.message === "Slevový kód není platný nebo již vypršel." || error?.message === "Slevový kód již byl použit.") {
       return res.status(409).json({ error: error.message })
     }
 
