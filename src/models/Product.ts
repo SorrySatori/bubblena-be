@@ -32,12 +32,14 @@ const ProductSchema: Schema<IProduct> = new Schema(
     name: { type: String, required: true },
     shortDescription: { type: String, required: true },
     description: { type: String, required: true },
-    variants: {
-      price: { type: Number, required: true },
-      weight: { type: Number, required: true, default: 0 },
-      inStock: { type: Boolean, default: true },
-      stockCount: { type: Number, required: true },
-    },
+    variants: [
+      {
+        price: { type: Number, required: true },
+        weight: { type: Number, required: true, default: 0 },
+        inStock: { type: Boolean, default: true },
+        stockCount: { type: Number, required: true, min: 0 },
+      },
+    ],
     storageMethod: { type: String, required: true },
     imageUrl: { type: String },
     videoUrl: { type: String },

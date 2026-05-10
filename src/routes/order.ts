@@ -6,6 +6,124 @@ import DamagedProduct from "../models/DamagedProduct"
 
 const router = express.Router();
 
+type StockItem = {
+  id: string
+  quantity: number
+}
+
+const toPositiveQuantity = (quantity: unknown) => {
+  const parsed = Number(quantity)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+}
+
+const mergeStockItems = (items: StockItem[]) => {
+  const merged = new Map<string, StockItem>()
+
+  for (const item of items) {
+    const quantity = toPositiveQuantity(item.quantity)
+    if (!item.id || quantity === null) {
+      throw new Error("Invalid order item quantity")
+    }
+
+    const existing = merged.get(item.id)
+    if (existing) {
+      existing.quantity += quantity
+    } else {
+      merged.set(item.id, { id: item.id, quantity })
+    }
+  }
+
+  return Array.from(merged.values())
+}
+
+const reduceStockForItem = async (item: StockItem) => {
+  if (item.id.startsWith("damaged-")) {
+    const damagedId = item.id.replace("damaged-", "")
+    const updated = await DamagedProduct.findOneAndUpdate(
+      {
+        _id: damagedId,
+        isDeleted: { $ne: true },
+        stockCount: { $gte: item.quantity },
+      },
+      [
+        {
+          $set: {
+            stockCount: { $subtract: ["$stockCount", item.quantity] },
+            inStock: { $gt: [{ $subtract: ["$stockCount", item.quantity] }, 0] },
+          },
+        },
+      ],
+      { new: true }
+    )
+
+    if (!updated) {
+      throw new Error(`Insufficient stock for damaged product ${damagedId}`)
+    }
+
+    return
+  }
+
+  if (item.id.includes("-")) {
+    const [productId, variantWeight] = item.id.split("-")
+    const weight = Number(variantWeight)
+
+    if (!productId || !Number.isFinite(weight)) {
+      throw new Error(`Invalid product variant id ${item.id}`)
+    }
+
+    const product = await Product.findOneAndUpdate(
+      {
+        _id: productId,
+        isDeleted: { $ne: true },
+        variants: { $elemMatch: { weight, stockCount: { $gte: item.quantity } } },
+      },
+      { $inc: { "variants.$.stockCount": -item.quantity } },
+      { new: true }
+    )
+
+    if (!product || !Array.isArray(product.variants)) {
+      throw new Error(`Insufficient stock for product variant ${item.id}`)
+    }
+
+    const variant = product.variants.find((variant: any) => variant.weight === weight)
+    if (variant) {
+      variant.inStock = variant.stockCount > 0
+      await product.save()
+    }
+
+    return
+  }
+
+  const updated = await Steamer.findOneAndUpdate(
+    {
+      _id: item.id,
+      isDeleted: { $ne: true },
+      stockCount: { $gte: item.quantity },
+    },
+    [
+      {
+        $set: {
+          stockCount: { $subtract: ["$stockCount", item.quantity] },
+          inStock: { $gt: [{ $subtract: ["$stockCount", item.quantity] }, 0] },
+        },
+      },
+    ],
+    { new: true }
+  )
+
+  if (!updated) {
+    throw new Error(`Insufficient stock for steamer ${item.id}`)
+  }
+}
+
+const reduceStockForOrder = async (items: StockItem[]) => {
+  const stockItems = mergeStockItems(items)
+
+  for (const item of stockItems) {
+    await reduceStockForItem(item)
+  }
+}
+
 // GET all orders
 router.get("/", async (req, res) => {
   try {
@@ -83,6 +201,17 @@ router.post("/create", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields." })
     }
 
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Order must contain at least one item." })
+    }
+
+    const existingOrder = await OrderModel.findOne({ orderId })
+    if (existingOrder) {
+      return res.status(200).json({ success: true, order: existingOrder })
+    }
+
+    await reduceStockForOrder(items)
+
     const newOrder = await OrderModel.create({
     orderId,
       customerInfo,
@@ -97,53 +226,17 @@ router.post("/create", async (req, res) => {
     })
     const savedOrder = await newOrder.save()
 
-    // Reduce stock for each ordered item
-    for (const item of items) {
-      try {
-        if (item.id.startsWith('damaged-')) {
-          // Damaged product: id format is "damaged-{_id}"
-          const damagedId = item.id.replace('damaged-', '')
-          await DamagedProduct.findByIdAndUpdate(damagedId, {
-            $inc: { stockCount: -item.quantity },
-          })
-          // Update inStock flag if needed
-          const updated = await DamagedProduct.findById(damagedId)
-          if (updated && updated.stockCount <= 0) {
-            updated.inStock = false
-            await updated.save()
-          }
-        } else if (item.id.includes('-')) {
-          // Bath bomb: id format is "{productId}-{variantWeight}"
-          const [productId, variantWeight] = item.id.split('-')
-          const product = await Product.findById(productId)
-          if (product && product.variants) {
-            const variants = product.variants as any[]
-            const variant = variants.find((v: any) => v.weight === parseFloat(variantWeight))
-            if (variant) {
-              variant.stockCount = Math.max(0, variant.stockCount - item.quantity)
-              variant.inStock = variant.stockCount > 0
-              await product.save()
-            }
-          }
-        } else {
-          // Steamer: id is the steamer _id
-          await Steamer.findByIdAndUpdate(item.id, {
-            $inc: { stockCount: -item.quantity },
-          })
-          const updated = await Steamer.findById(item.id)
-          if (updated && updated.stockCount <= 0) {
-            updated.inStock = false
-            await updated.save()
-          }
-        }
-      } catch (err) {
-        console.error(`Error reducing stock for item ${item.id}:`, err)
-      }
-    }
-
     res.status(201).json({ success: true, order: savedOrder })
   } catch (error: any) {
     console.error("Error creating order:", error)
+    if (error?.message?.startsWith("Insufficient stock")) {
+      return res.status(409).json({ error: error.message })
+    }
+
+    if (error?.message === "Invalid order item quantity" || error?.message?.startsWith("Invalid product variant id")) {
+      return res.status(400).json({ error: error.message })
+    }
+
     res.status(500).json({ error: "Internal server error" })
   }
 })
