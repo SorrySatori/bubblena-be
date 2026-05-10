@@ -46,6 +46,16 @@ export interface Totals {
   total: number;
 }
 
+export interface OrderDiscount {
+  code: string;
+  type: "global" | "individual";
+  percentage: number;
+  freeShipping: boolean;
+  percentageDiscount: number;
+  shippingDiscount: number;
+  totalDiscount: number;
+}
+
 export interface Order extends Document {
   cartId?: string | null;
   orderId: string;
@@ -54,6 +64,7 @@ export interface Order extends Document {
   selectedPickupPoint?: SelectedPickupPoint;
   paymentMethod: string;
   orderNotes?: string;
+  discount?: OrderDiscount;
   items: OrderItem[];
   totals: Totals;
   status: string;
@@ -98,6 +109,15 @@ const OrderSchema = new Schema<Order>(
 
     paymentMethod: { type: String, required: true },
     orderNotes: { type: String, default: "" },
+    discount: {
+      code: String,
+      type: String,
+      percentage: Number,
+      freeShipping: Boolean,
+      percentageDiscount: Number,
+      shippingDiscount: Number,
+      totalDiscount: Number,
+    },
 
     items: [
       {
