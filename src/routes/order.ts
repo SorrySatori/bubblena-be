@@ -3,6 +3,8 @@ import { OrderModel } from "../models/Order"
 import Product from "../models/Product"
 import Steamer from "../models/Steamer"
 import DamagedProduct from "../models/DamagedProduct"
+import { DiscountCodeModel, IDiscountCode } from "../models/DiscountCode"
+import { calculateDiscount, findValidDiscountCode } from "./discountCodeRoutes"
 
 const router = express.Router();
 
@@ -15,6 +17,8 @@ const toPositiveQuantity = (quantity: unknown) => {
   const parsed = Number(quantity)
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }
+
+const roundMoney = (amount: number) => Math.round(amount * 100) / 100
 
 const mergeStockItems = (items: StockItem[]) => {
   const merged = new Map<string, StockItem>()
@@ -124,6 +128,52 @@ const reduceStockForOrder = async (items: StockItem[]) => {
   }
 }
 
+const getOrderDiscount = async (
+  discount: { code?: string } | undefined,
+  totals: { subtotal?: number; shipping?: number } | undefined
+) => {
+  const code = discount?.code?.trim()
+  if (!code) return null
+
+  const discountCode = await findValidDiscountCode(code)
+  if (!discountCode) {
+    throw new Error("Invalid discount code")
+  }
+
+  return {
+    discountCode,
+    discount: calculateDiscount(
+      discountCode,
+      Math.max(0, Number(totals?.subtotal) || 0),
+      Math.max(0, Number(totals?.shipping) || 0)
+    ),
+  }
+}
+
+const markIndividualDiscountCodeUsed = async (discountCode: IDiscountCode, orderId: string) => {
+  if (discountCode.type !== "individual") return null
+
+  const usedCode = await DiscountCodeModel.findOneAndUpdate(
+    {
+      _id: discountCode._id,
+      usedAt: { $exists: false },
+    },
+    {
+      $set: {
+        usedAt: new Date(),
+        usedByOrderId: orderId,
+      },
+    },
+    { new: true }
+  )
+
+  if (!usedCode) {
+    throw new Error("Discount code has already been used")
+  }
+
+  return String(usedCode._id)
+}
+
 // GET all orders
 router.get("/", async (req, res) => {
   try {
@@ -195,6 +245,7 @@ router.post("/create", async (req, res) => {
       shippingMethod,
       paymentMethod,
       totals,
+      discount,
       selectedPickupPoint,
     } = req.body
     if (!orderId) {
@@ -210,7 +261,32 @@ router.post("/create", async (req, res) => {
       return res.status(200).json({ success: true, order: existingOrder })
     }
 
-    await reduceStockForOrder(items)
+    const orderDiscount = await getOrderDiscount(discount, totals)
+    const markedDiscountCodeId = orderDiscount
+      ? await markIndividualDiscountCodeUsed(orderDiscount.discountCode, orderId)
+      : null
+
+    try {
+      await reduceStockForOrder(items)
+    } catch (error) {
+      if (markedDiscountCodeId) {
+        await DiscountCodeModel.findByIdAndUpdate(markedDiscountCodeId, {
+          $unset: { usedAt: "", usedByOrderId: "" },
+        })
+      }
+      throw error
+    }
+
+    const subtotal = roundMoney(Number(totals?.subtotal) || 0)
+    const shipping = roundMoney(Number(totals?.shipping) || 0)
+    const paymentSurcharge = roundMoney(Number(totals?.paymentSurcharge) || 0)
+    const totalDiscount = orderDiscount?.discount.totalDiscount || 0
+    const normalizedTotals = {
+      subtotal,
+      shipping,
+      paymentSurcharge,
+      total: Math.max(0, roundMoney(subtotal + shipping + paymentSurcharge - totalDiscount)),
+    }
 
     const newOrder = await OrderModel.create({
     orderId,
@@ -219,7 +295,8 @@ router.post("/create", async (req, res) => {
       shippingMethod,
       paymentMethod,
       weight,
-      totals,
+      totals: normalizedTotals,
+      discount: orderDiscount?.discount,
       cartId,
       selectedPickupPoint,
       status: "pending",
@@ -230,6 +307,10 @@ router.post("/create", async (req, res) => {
   } catch (error: any) {
     console.error("Error creating order:", error)
     if (error?.message?.startsWith("Insufficient stock")) {
+      return res.status(409).json({ error: error.message })
+    }
+
+    if (error?.message === "Invalid discount code" || error?.message === "Discount code has already been used") {
       return res.status(409).json({ error: error.message })
     }
 

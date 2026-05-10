@@ -12,6 +12,9 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string)
 router.post("/create-session", async (req, res) => {
   try {
     const body = req.body;
+    const percentage = Math.min(100, Math.max(0, Number(body?.discount?.percentage) || 0));
+    const multiplier = (100 - percentage) / 100;
+    const hasFreeShipping = Boolean(body?.discount?.freeShipping);
     const lineItems = body?.items?.map((item: IProduct) => ({
       price_data: {
         currency: "czk",
@@ -19,12 +22,12 @@ router.post("/create-session", async (req, res) => {
           name: item.name,
           images: [item.imageUrl],
         },
-        unit_amount: Math.round(item.price * 100),
+        unit_amount: Math.max(0, Math.round(item.price * multiplier * 100)),
       },
       quantity: item.quantity,
     })) || []
 
-    if (body?.totals?.shipping) {
+    if (body?.totals?.shipping && !hasFreeShipping) {
       lineItems.push({
         price_data: {
           currency: "czk",
