@@ -140,7 +140,7 @@ router.post("/validate", apiKeyAuth, async (req: Request, res: Response) => {
     const discountCode = await findValidDiscountCode(code);
 
     if (!discountCode) {
-      return res.status(404).json({ success: false, error: "Discount code is invalid or expired" });
+      return res.status(404).json({ success: false, error: "Slevový kód není platný nebo již vypršel." });
     }
 
     res.json({

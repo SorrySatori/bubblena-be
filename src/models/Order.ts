@@ -72,6 +72,19 @@ export interface Order extends Document {
   updatedAt: Date;
 }
 
+const OrderDiscountSchema = new Schema<OrderDiscount>(
+  {
+    code: String,
+    type: String,
+    percentage: Number,
+    freeShipping: Boolean,
+    percentageDiscount: Number,
+    shippingDiscount: Number,
+    totalDiscount: Number,
+  },
+  { _id: false }
+);
+
 const OrderSchema = new Schema<Order>(
   {
     cartId: { type: String, default: null },
@@ -109,15 +122,7 @@ const OrderSchema = new Schema<Order>(
 
     paymentMethod: { type: String, required: true },
     orderNotes: { type: String, default: "" },
-    discount: {
-      code: String,
-      type: String,
-      percentage: Number,
-      freeShipping: Boolean,
-      percentageDiscount: Number,
-      shippingDiscount: Number,
-      totalDiscount: Number,
-    },
+    discount: { type: OrderDiscountSchema, default: undefined },
 
     items: [
       {
