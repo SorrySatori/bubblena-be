@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose'
 
 export interface IDamagedProduct extends Document {
-  _id: string;
+  _id: mongoose.Types.ObjectId;
   bathBombType: string;
   weight: number;
   price: number;
