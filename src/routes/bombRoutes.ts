@@ -1,8 +1,43 @@
 import express, { Request, Response } from 'express'
 import Bomb from '../models/Bomb'
+import Product from '../models/Product'
 import { apiKeyAuth } from '../middleware/apikeyAuth'
 
 const router = express.Router()
+
+// POST migrate products to bombs (one-time use)
+router.post('/migrate-from-products', apiKeyAuth, async (req: Request, res: Response) => {
+  try {
+    const existingBombs = await Bomb.countDocuments()
+    if (existingBombs > 0) {
+      return res.status(400).json({ message: 'Bombs collection is not empty. Migration skipped to avoid duplicates.' })
+    }
+
+    const products = await Product.find({ isDeleted: { $ne: true } })
+
+    const generateAcronym = (name: string): string => {
+      return name.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 4)
+    }
+
+    const bombs = products.map((product) => ({
+      name: product.name,
+      acronym: generateAcronym(product.name),
+      shortDescription: product.shortDescription || '',
+      description: product.description || '',
+      lots: [],
+      storageMethod: product.storageMethod || '',
+      imageUrl: product.imageUrl,
+      videoUrl: product.videoUrl,
+      bathImageUrl: product.bathImageUrl,
+      isDeleted: false,
+    }))
+
+    const inserted = await Bomb.insertMany(bombs)
+    res.status(201).json({ message: `Migrated ${inserted.length} products to bombs`, bombs: inserted })
+  } catch (err) {
+    res.status(500).json({ message: 'Migration failed', error: err })
+  }
+})
 
 // GET all bombs
 router.get('/', apiKeyAuth, async (req: Request, res: Response) => {
@@ -73,6 +108,58 @@ router.put('/:id', apiKeyAuth, async (req: Request, res: Response) => {
     res.json(updatedBomb)
   } catch (err) {
     res.status(400).json({ message: 'Chyba při aktualizaci bomby', error: err })
+  }
+})
+
+// POST add batch to bomb (creates new batch in last LOT, or new LOT every 10 batches)
+router.post('/:id/add-batch', apiKeyAuth, async (req: Request, res: Response) => {
+  try {
+    const { variants } = req.body
+
+    if (!variants || !Array.isArray(variants) || variants.length === 0) {
+      return res.status(400).json({ message: 'Variants array is required' })
+    }
+
+    const bomb = await Bomb.findById(req.params.id)
+    if (!bomb || bomb.isDeleted) {
+      return res.status(404).json({ message: 'Bomba nenalezena' })
+    }
+
+    const acronym = bomb.acronym
+
+    // Determine total batch count across all lots
+    const totalBatches = bomb.lots.reduce((sum, lot) => sum + lot.batches.length, 0)
+    const newBatchNumber = totalBatches + 1
+    const batchId = `${acronym}-${String(newBatchNumber).padStart(3, '0')}`
+
+    const priceByWeight = new Map(bomb.pricing.map(p => [p.weight, p.price]))
+
+    const newBatch = {
+      batchId,
+      variants: variants.map((v: { weight: number; stockCount: number }) => ({
+        weight: v.weight,
+        price: priceByWeight.get(v.weight) || 0,
+        stockCount: v.stockCount,
+        inStock: v.stockCount > 0,
+      })),
+    }
+
+    // Check if we need a new LOT (every 10 batches)
+    const lastLot = bomb.lots[bomb.lots.length - 1]
+    if (!lastLot || lastLot.batches.length >= 10) {
+      // Create new LOT
+      const newLotNumber = bomb.lots.length + 1
+      const lotNumber = `BB-${acronym}-${String(newLotNumber).padStart(3, '0')}`
+      bomb.lots.push({ lotNumber, batches: [newBatch] } as any)
+    } else {
+      // Add batch to last LOT
+      lastLot.batches.push(newBatch as any)
+    }
+
+    await bomb.save()
+    res.status(201).json(bomb)
+  } catch (err) {
+    res.status(400).json({ message: 'Chyba při přidávání šarže', error: err })
   }
 })
 
