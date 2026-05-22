@@ -10,6 +10,8 @@ export interface IDamagedProduct extends Document {
   inStock: boolean;
   imageUrl?: string;
   description?: string;
+  lotNumber?: string;
+  batchId?: string;
   isDeleted?: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -29,6 +31,8 @@ const DamagedProductSchema: Schema<IDamagedProduct> = new Schema(
     inStock: { type: Boolean, default: true },
     imageUrl: { type: String },
     description: { type: String },
+    lotNumber: { type: String },
+    batchId: { type: String },
     isDeleted: { type: Boolean, default: false },
   },
   {

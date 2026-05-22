@@ -14,6 +14,8 @@ export interface ISteamer extends Document {
   category?: string;
   storageMethod?: string;
   ingredients: string;
+  lotNumber?: string;
+  batchId?: string;
   createdAt?: string;
   updatedAt?: string;
   isDeleted?: boolean;
@@ -33,6 +35,8 @@ const SteamerSchema: Schema<ISteamer> = new Schema(
     category: { type: String },
     storageMethod: { type: String, required: true },
     ingredients: { type: String, required: true },
+    lotNumber: { type: String },
+    batchId: { type: String },
     isDeleted: { type: Boolean, default: false },
   },
   {
