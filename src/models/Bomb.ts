@@ -9,17 +9,25 @@ export interface BombVariant {
 
 export interface BombBatch {
   _id?: mongoose.Types.ObjectId;
+  batchId: string;
   variants: BombVariant[];
 }
 
 export interface BombLot {
   _id?: mongoose.Types.ObjectId;
+  lotNumber: string;
   batches: BombBatch[];
+}
+
+export interface BombPricing {
+  weight: number;
+  price: number;
 }
 
 export interface IBomb extends Document {
   _id: mongoose.Types.ObjectId;
   name: string;
+  acronym: string;
   shortDescription?: string;
   description: string;
   imageUrl?: string;
@@ -27,6 +35,7 @@ export interface IBomb extends Document {
   videoUrl?: string;
   category?: string;
   storageMethod?: string;
+  pricing: BombPricing[];
   lots: BombLot[];
   createdAt?: string;
   updatedAt?: string;
@@ -36,12 +45,21 @@ export interface IBomb extends Document {
 const BombSchema: Schema<IBomb> = new Schema(
   {
     name: { type: String, required: true },
+    acronym: { type: String, required: true },
     shortDescription: { type: String, required: true },
     description: { type: String, required: true },
+    pricing: [
+      {
+        weight: { type: Number, required: true },
+        price: { type: Number, required: true },
+      },
+    ],
     lots: [
       {
+        lotNumber: { type: String, required: true },
         batches: [
           {
+            batchId: { type: String, required: true },
             variants: [
               {
                 price: { type: Number, required: true },
