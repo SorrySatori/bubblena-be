@@ -126,4 +126,51 @@ router.patch('/:id/undelete', apiKeyAuth, async (req: Request, res: Response) =>
   }
 })
 
+// POST add batch to steamer (creates new batch in last LOT, new LOT every 10 batches)
+router.post('/:id/add-batch', apiKeyAuth, async (req: Request, res: Response) => {
+  try {
+    const { stockCount } = req.body
+
+    if (stockCount === undefined || stockCount < 0) {
+      return res.status(400).json({ message: 'stockCount is required and must be >= 0' })
+    }
+
+    const steamer = await Steamer.findById(req.params.id)
+    if (!steamer || steamer.isDeleted) {
+      return res.status(404).json({ message: 'Steamer nenalezen' })
+    }
+
+    const acronym = steamer.name.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 4)
+
+    // Determine total batch count across all lots
+    const totalBatches = steamer.lots.reduce((sum, lot) => sum + lot.batches.length, 0)
+    const newBatchNumber = totalBatches + 1
+    const batchId = `${acronym}-${String(newBatchNumber).padStart(3, '0')}`
+
+    const newBatch = {
+      batchId,
+      stockCount: parseInt(stockCount),
+    }
+
+    // Check if we need a new LOT (every 10 batches)
+    const lastLot = steamer.lots[steamer.lots.length - 1]
+    if (!lastLot || lastLot.batches.length >= 10) {
+      const newLotNumber = steamer.lots.length + 1
+      const lotNumber = `ST-${acronym}-${String(newLotNumber).padStart(3, '0')}`
+      steamer.lots.push({ lotNumber, batches: [newBatch] } as any)
+    } else {
+      lastLot.batches.push(newBatch as any)
+    }
+
+    // Update overall stockCount
+    steamer.stockCount = steamer.stockCount + parseInt(stockCount)
+    steamer.inStock = steamer.stockCount > 0
+
+    await steamer.save()
+    res.status(201).json(steamer)
+  } catch (err) {
+    res.status(400).json({ message: 'Chyba při přidávání šarže', error: err })
+  }
+})
+
 export default router

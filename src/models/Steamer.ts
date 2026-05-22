@@ -1,5 +1,17 @@
 import mongoose, { Schema, Document } from 'mongoose'
 
+export interface SteamerBatch {
+  _id?: mongoose.Types.ObjectId;
+  batchId: string;
+  stockCount: number;
+}
+
+export interface SteamerLot {
+  _id?: mongoose.Types.ObjectId;
+  lotNumber: string;
+  batches: SteamerBatch[];
+}
+
 export interface ISteamer extends Document {
   _id: mongoose.Types.ObjectId;
   name: string;
@@ -14,8 +26,7 @@ export interface ISteamer extends Document {
   category?: string;
   storageMethod?: string;
   ingredients: string;
-  lotNumber?: string;
-  batchId?: string;
+  lots: SteamerLot[];
   createdAt?: string;
   updatedAt?: string;
   isDeleted?: boolean;
@@ -35,8 +46,17 @@ const SteamerSchema: Schema<ISteamer> = new Schema(
     category: { type: String },
     storageMethod: { type: String, required: true },
     ingredients: { type: String, required: true },
-    lotNumber: { type: String },
-    batchId: { type: String },
+    lots: [
+      {
+        lotNumber: { type: String, required: true },
+        batches: [
+          {
+            batchId: { type: String, required: true },
+            stockCount: { type: Number, required: true, min: 0 },
+          },
+        ],
+      },
+    ],
     isDeleted: { type: Boolean, default: false },
   },
   {
