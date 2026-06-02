@@ -58,6 +58,7 @@ export interface OrderDiscount {
 
 export interface Order extends Document {
   cartId?: string | null;
+  userId?: string | null;
   orderId: string;
   customerInfo: CustomerInfo;
   shippingMethod: string;
@@ -88,6 +89,7 @@ const OrderDiscountSchema = new Schema<OrderDiscount>(
 const OrderSchema = new Schema<Order>(
   {
     cartId: { type: String, default: null },
+    userId: { type: String, default: null, index: true },
     orderId: { type: String, required: true, unique: true },
 
     customerInfo: {
