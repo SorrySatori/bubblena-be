@@ -19,6 +19,10 @@ export interface IUser extends Document {
   googleId?: string | null;
   authProvider: AuthProvider;
   emailVerified: boolean;
+  // GDPR / consent record (accountability, čl. 7 GDPR)
+  termsAcceptedAt?: Date | null;
+  marketingConsent: boolean;
+  marketingConsentAt?: Date | null;
   verifyToken?: string | null;
   verifyTokenExpires?: Date | null;
   createdAt: Date;
@@ -49,6 +53,9 @@ const UserSchema = new Schema<IUser>(
     googleId: { type: String, default: null },
     authProvider: { type: String, enum: ["local", "google"], default: "local" },
     emailVerified: { type: Boolean, default: false },
+    termsAcceptedAt: { type: Date, default: null },
+    marketingConsent: { type: Boolean, default: false },
+    marketingConsentAt: { type: Date, default: null },
     // Likewise hidden from generic queries.
     verifyToken: { type: String, default: null, select: false },
     verifyTokenExpires: { type: Date, default: null, select: false },
