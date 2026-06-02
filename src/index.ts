@@ -14,6 +14,9 @@ import glsRoutes from "./routes/gls"
 import ordersRouter from "./routes/order"
 import discountCodeRoutes from "./routes/discountCodeRoutes"
 import bombRoutes from "./routes/bombRoutes"
+import rawMaterialRoutes from "./routes/rawMaterialRoutes"
+import recipeRoutes from "./routes/recipeRoutes"
+import productionRoutes from "./routes/productionRoutes"
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -37,6 +40,9 @@ app.use("/api/gls", glsRoutes)
 app.use("/api/order", ordersRouter)
 app.use("/api/discount-codes", discountCodeRoutes)
 app.use("/api/bombs", bombRoutes)
+app.use("/api/raw-materials", rawMaterialRoutes)
+app.use("/api/recipes", recipeRoutes)
+app.use("/api/production", productionRoutes)
 
 connectDB().then(() => {
   app.listen(PORT, () => {
