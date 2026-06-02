@@ -282,6 +282,7 @@ router.post("/create", async (req, res) => {
       customerInfo,
       weight,
       cartId,
+      userId,
       items,
       shippingMethod,
       paymentMethod,
@@ -324,6 +325,7 @@ router.post("/create", async (req, res) => {
       totals: normalizedTotals,
       discount: orderDiscount?.discount,
       cartId,
+      userId: userId || null,
       selectedPickupPoint,
       status: "pending",
     })

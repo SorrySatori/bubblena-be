@@ -17,6 +17,7 @@ import bombRoutes from "./routes/bombRoutes"
 import rawMaterialRoutes from "./routes/rawMaterialRoutes"
 import recipeRoutes from "./routes/recipeRoutes"
 import productionRoutes from "./routes/productionRoutes"
+import authRoutes from "./routes/auth"
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -43,6 +44,7 @@ app.use("/api/bombs", bombRoutes)
 app.use("/api/raw-materials", rawMaterialRoutes)
 app.use("/api/recipes", recipeRoutes)
 app.use("/api/production", productionRoutes)
+app.use("/api/auth", authRoutes)
 
 connectDB().then(() => {
   app.listen(PORT, () => {
