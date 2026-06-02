@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express'
 import Steamer from '../models/Steamer'
 import { apiKeyAuth } from '../middleware/apikeyAuth'
+import { appendBatch, steamerAcronym } from '../utils/batching'
 
 const router = express.Router()
 
@@ -140,27 +141,12 @@ router.post('/:id/add-batch', apiKeyAuth, async (req: Request, res: Response) =>
       return res.status(404).json({ message: 'Steamer nenalezen' })
     }
 
-    const acronym = steamer.name.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 4)
+    const acronym = steamerAcronym(steamer.name)
 
-    // Determine total batch count across all lots
-    const totalBatches = steamer.lots.reduce((sum, lot) => sum + lot.batches.length, 0)
-    const newBatchNumber = totalBatches + 1
-    const batchId = `${acronym}-${String(newBatchNumber).padStart(3, '0')}`
-
-    const newBatch = {
+    appendBatch(steamer, 'ST', acronym, (batchId) => ({
       batchId,
       stockCount: parseInt(stockCount),
-    }
-
-    // Check if we need a new LOT (every 10 batches)
-    const lastLot = steamer.lots[steamer.lots.length - 1]
-    if (!lastLot || lastLot.batches.length >= 10) {
-      const newLotNumber = steamer.lots.length + 1
-      const lotNumber = `ST-${acronym}-${String(newLotNumber).padStart(3, '0')}`
-      steamer.lots.push({ lotNumber, batches: [newBatch] } as any)
-    } else {
-      lastLot.batches.push(newBatch as any)
-    }
+    }))
 
     // Update overall stockCount
     steamer.stockCount = steamer.stockCount + parseInt(stockCount)

@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express'
 import Bomb from '../models/Bomb'
 import Product from '../models/Product'
 import { apiKeyAuth } from '../middleware/apikeyAuth'
+import { appendBatch } from '../utils/batching'
 
 const router = express.Router()
 
@@ -125,16 +126,9 @@ router.post('/:id/add-batch', apiKeyAuth, async (req: Request, res: Response) =>
       return res.status(404).json({ message: 'Bomba nenalezena' })
     }
 
-    const acronym = bomb.acronym
-
-    // Determine total batch count across all lots
-    const totalBatches = bomb.lots.reduce((sum, lot) => sum + lot.batches.length, 0)
-    const newBatchNumber = totalBatches + 1
-    const batchId = `${acronym}-${String(newBatchNumber).padStart(3, '0')}`
-
     const priceByWeight = new Map(bomb.pricing.map(p => [p.weight, p.price]))
 
-    const newBatch = {
+    appendBatch(bomb, 'BB', bomb.acronym, (batchId) => ({
       batchId,
       variants: variants.map((v: { weight: number; stockCount: number }) => ({
         weight: v.weight,
@@ -142,19 +136,7 @@ router.post('/:id/add-batch', apiKeyAuth, async (req: Request, res: Response) =>
         stockCount: v.stockCount,
         inStock: v.stockCount > 0,
       })),
-    }
-
-    // Check if we need a new LOT (every 10 batches)
-    const lastLot = bomb.lots[bomb.lots.length - 1]
-    if (!lastLot || lastLot.batches.length >= 10) {
-      // Create new LOT
-      const newLotNumber = bomb.lots.length + 1
-      const lotNumber = `BB-${acronym}-${String(newLotNumber).padStart(3, '0')}`
-      bomb.lots.push({ lotNumber, batches: [newBatch] } as any)
-    } else {
-      // Add batch to last LOT
-      lastLot.batches.push(newBatch as any)
-    }
+    }))
 
     await bomb.save()
     res.status(201).json(bomb)
