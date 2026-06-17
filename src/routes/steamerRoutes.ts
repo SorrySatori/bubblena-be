@@ -17,7 +17,7 @@ router.get('/', apiKeyAuth, async (req: Request, res: Response) => {
 
 router.get('/:id', apiKeyAuth, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params
+    const id = String(req.params.id)
     let steamer = null
     if (mongoose.Types.ObjectId.isValid(id)) {
       steamer = await Steamer.findOne({ _id: id, isDeleted: { $ne: true } })

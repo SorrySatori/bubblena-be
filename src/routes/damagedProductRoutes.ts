@@ -16,7 +16,7 @@ router.get('/', apiKeyAuth, async (req: Request, res: Response) => {
 
 router.get('/:id', apiKeyAuth, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params
+    const id = String(req.params.id)
     let damagedProduct = null
     if (mongoose.Types.ObjectId.isValid(id)) {
       damagedProduct = await DamagedProduct.findOne({ _id: id, isDeleted: { $ne: true } })

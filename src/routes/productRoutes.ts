@@ -18,7 +18,7 @@ router.get('/',apiKeyAuth, async (req: Request, res: Response) => {
 //GET single product by ID or slug
 router.get('/:id', apiKeyAuth, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params
+    const id = String(req.params.id)
     let product = null
     if (mongoose.Types.ObjectId.isValid(id)) {
       product = await Product.findOne({ _id: id, isDeleted: { $ne: true } })
