@@ -1,8 +1,10 @@
 import mongoose, { Schema, Document } from 'mongoose'
+import { attachSlugHook } from '../utils/slug'
 
 export interface IDamagedProduct extends Document {
   _id: mongoose.Types.ObjectId;
   bathBombType: string;
+  slug?: string;
   weight: number;
   price: number;
   damageLevel: 'lehce' | 'stredne' | 'prach';
@@ -20,6 +22,7 @@ export interface IDamagedProduct extends Document {
 const DamagedProductSchema: Schema<IDamagedProduct> = new Schema(
   {
     bathBombType: { type: String, required: true },
+    slug: { type: String, index: true },
     weight: { type: Number, required: true },
     price: { type: Number, required: true },
     damageLevel: { 
@@ -39,5 +42,7 @@ const DamagedProductSchema: Schema<IDamagedProduct> = new Schema(
     timestamps: true,
   }
 )
+
+attachSlugHook(DamagedProductSchema, 'bathBombType')
 
 export default mongoose.model<IDamagedProduct>('DamagedProduct', DamagedProductSchema)

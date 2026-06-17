@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express'
+import mongoose from 'mongoose'
 import Steamer from '../models/Steamer'
 import { apiKeyAuth } from '../middleware/apikeyAuth'
 import { appendBatch, steamerAcronym } from '../utils/batching'
@@ -16,7 +17,14 @@ router.get('/', apiKeyAuth, async (req: Request, res: Response) => {
 
 router.get('/:id', apiKeyAuth, async (req: Request, res: Response) => {
   try {
-    const steamer = await Steamer.findOne({ _id: req.params.id, isDeleted: { $ne: true } })
+    const { id } = req.params
+    let steamer = null
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      steamer = await Steamer.findOne({ _id: id, isDeleted: { $ne: true } })
+    }
+    if (!steamer) {
+      steamer = await Steamer.findOne({ slug: id, isDeleted: { $ne: true } })
+    }
     if (!steamer) {
       return res.status(404).json({ message: 'Steamer nenalezen' })
     }

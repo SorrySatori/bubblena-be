@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express'
+import mongoose from 'mongoose'
 import Product from '../models/Product'
 import { apiKeyAuth } from '../middleware/apikeyAuth'
 
@@ -14,10 +15,17 @@ router.get('/',apiKeyAuth, async (req: Request, res: Response) => {
   }
 })
 
-//GET single product by ID
+//GET single product by ID or slug
 router.get('/:id', apiKeyAuth, async (req: Request, res: Response) => {
   try {
-    const product = await Product.findOne({ _id: req.params.id, isDeleted: { $ne: true } })
+    const { id } = req.params
+    let product = null
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      product = await Product.findOne({ _id: id, isDeleted: { $ne: true } })
+    }
+    if (!product) {
+      product = await Product.findOne({ slug: id, isDeleted: { $ne: true } })
+    }
     if (!product) {
       return res.status(404).json({ message: 'Produkt nenalezen' })
     }

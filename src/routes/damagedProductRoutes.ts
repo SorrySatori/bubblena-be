@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express'
+import mongoose from 'mongoose'
 import DamagedProduct from '../models/DamagedProduct'
 import { apiKeyAuth } from '../middleware/apikeyAuth'
 
@@ -15,7 +16,14 @@ router.get('/', apiKeyAuth, async (req: Request, res: Response) => {
 
 router.get('/:id', apiKeyAuth, async (req: Request, res: Response) => {
   try {
-    const damagedProduct = await DamagedProduct.findOne({ _id: req.params.id, isDeleted: { $ne: true } })
+    const { id } = req.params
+    let damagedProduct = null
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      damagedProduct = await DamagedProduct.findOne({ _id: id, isDeleted: { $ne: true } })
+    }
+    if (!damagedProduct) {
+      damagedProduct = await DamagedProduct.findOne({ slug: id, isDeleted: { $ne: true } })
+    }
     if (!damagedProduct) {
       return res.status(404).json({ message: 'Poškozený produkt nenalezen' })
     }

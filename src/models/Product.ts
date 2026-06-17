@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose'
+import { attachSlugHook } from '../utils/slug'
 
 export interface ProductVariant {
   weight: number;
@@ -10,6 +11,7 @@ export interface ProductVariant {
 export interface IProduct extends Document {
   _id: mongoose.Types.ObjectId;
   name: string;
+  slug?: string;
   shortDescription?: string;
   description: string;
   imageUrl?: string;
@@ -30,6 +32,7 @@ export interface IProduct extends Document {
 const ProductSchema: Schema<IProduct> = new Schema(
   {
     name: { type: String, required: true },
+    slug: { type: String, index: true },
     shortDescription: { type: String, required: true },
     description: { type: String, required: true },
     variants: [
@@ -50,5 +53,7 @@ const ProductSchema: Schema<IProduct> = new Schema(
     timestamps: true,
   }
 )
+
+attachSlugHook(ProductSchema, 'name')
 
 export default mongoose.model<IProduct>('Product', ProductSchema)

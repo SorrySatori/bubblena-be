@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose'
+import { attachSlugHook } from '../utils/slug'
 
 export interface SteamerBatch {
   _id?: mongoose.Types.ObjectId;
@@ -15,6 +16,7 @@ export interface SteamerLot {
 export interface ISteamer extends Document {
   _id: mongoose.Types.ObjectId;
   name: string;
+  slug?: string;
   shortDescription?: string;
   description: string;
   price: number;
@@ -35,6 +37,7 @@ export interface ISteamer extends Document {
 const SteamerSchema: Schema<ISteamer> = new Schema(
   {
     name: { type: String, required: true },
+    slug: { type: String, index: true },
     shortDescription: { type: String, required: true },
     description: { type: String, required: true },
     price: { type: Number, required: true },
@@ -63,5 +66,7 @@ const SteamerSchema: Schema<ISteamer> = new Schema(
     timestamps: true,
   }
 )
+
+attachSlugHook(SteamerSchema, 'name')
 
 export default mongoose.model<ISteamer>('Steamer', SteamerSchema)

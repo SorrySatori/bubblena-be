@@ -10,11 +10,8 @@ router.post("/", async (req, res) => {
     const newCart = new CartModel({ cartId, items: [] });
     await newCart.save();
 
-    res.cookie("cartId", cartId, {
-      httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 dní
-    });
-
+    // cartId se klientovi vrací v těle odpovědi; FE si ho drží v localStorage
+    // a posílá v URL. Cookie tu nikdo nečetl, proto ji nenastavujeme.
     res.json({ cartId });
   } catch (err) {
     console.error(err);
