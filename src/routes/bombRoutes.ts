@@ -3,6 +3,7 @@ import Bomb from '../models/Bomb'
 import Product from '../models/Product'
 import { apiKeyAuth } from '../middleware/apikeyAuth'
 import { appendBatch } from '../utils/batching'
+import { BOMB_PRICING } from '../constants/variants'
 
 const router = express.Router()
 
@@ -25,6 +26,7 @@ router.post('/migrate-from-products', apiKeyAuth, async (req: Request, res: Resp
       acronym: generateAcronym(product.name),
       shortDescription: product.shortDescription || '',
       description: product.description || '',
+      pricing: BOMB_PRICING,
       lots: [],
       storageMethod: product.storageMethod || '',
       imageUrl: product.imageUrl,
@@ -69,6 +71,7 @@ router.post('/', apiKeyAuth, async (req: Request, res: Response) => {
     name,
     shortDescription,
     description,
+    pricing,
     lots,
     imageUrl,
     storageMethod,
@@ -81,6 +84,7 @@ router.post('/', apiKeyAuth, async (req: Request, res: Response) => {
       name,
       shortDescription,
       description,
+      pricing: pricing && pricing.length ? pricing : BOMB_PRICING,
       lots,
       imageUrl,
       storageMethod,
