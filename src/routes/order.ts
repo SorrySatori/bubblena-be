@@ -5,6 +5,7 @@ import Steamer from "../models/Steamer"
 import DamagedProduct from "../models/DamagedProduct"
 import { DiscountCodeModel, IDiscountCode } from "../models/DiscountCode"
 import { calculateDiscount, findValidDiscountCode } from "./discountCodeRoutes"
+import { sendOrderShippedEmail } from "../utils/orderEmails"
 
 const router = express.Router();
 
@@ -258,17 +259,25 @@ router.patch("/:orderId/status", async (req, res) => {
       return res.status(400).json({ success: false, error: "Invalid status" })
     }
     
-    const order = await OrderModel.findOneAndUpdate(
-      { orderId },
-      { status, updatedAt: new Date() },
-      { new: true }
-    )
-    
-    if (!order) {
+    const existing = await OrderModel.findOne({ orderId })
+    if (!existing) {
       return res.status(404).json({ success: false, error: "Order not found" })
     }
-    
+
+    const wasShipped = existing.status === "shipped"
+    existing.status = status
+    existing.updatedAt = new Date()
+    const order = await existing.save()
+
     res.status(200).json({ success: true, order })
+
+    // On transition into "shipped" (Odesláno), notify the customer by e-mail.
+    // Fire-and-forget — never let an e-mail failure affect the status update.
+    if (status === "shipped" && !wasShipped) {
+      sendOrderShippedEmail(order).catch((err) =>
+        console.error(`Failed to send shipped e-mail for order ${orderId}:`, err?.message || err)
+      )
+    }
   } catch (error: any) {
     console.error("Error updating order status:", error)
     res.status(500).json({ success: false, error: "Internal server error" })
