@@ -200,4 +200,16 @@ router.put('/:id', apiKeyAuth, async (req: Request, res: Response) => {
   }
 })
 
+// DELETE a production/evidence record. Removes only the record — does NOT restock
+// raw materials or touch the Bomb/Steamer stock.
+router.delete('/:id', apiKeyAuth, async (req: Request, res: Response) => {
+  try {
+    const deleted = await ProductionRecord.findByIdAndDelete(req.params.id)
+    if (!deleted) return res.status(404).json({ message: 'Záznam nenalezen' })
+    res.json({ message: 'Záznam výroby smazán', batchNumber: deleted.batchNumber })
+  } catch (err) {
+    res.status(500).json({ message: 'Chyba při mazání záznamu', error: err })
+  }
+})
+
 export default router
