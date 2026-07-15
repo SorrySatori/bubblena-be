@@ -41,7 +41,6 @@ router.post('/', apiKeyAuth, async (req: Request, res: Response) => {
     description,
     price,
     weight,
-    inStock,
     stockCount,
     imageUrl,
     videoUrl,
@@ -51,20 +50,29 @@ router.post('/', apiKeyAuth, async (req: Request, res: Response) => {
   } = req.body
 
   try {
+    const initialStock = Number(stockCount) || 0
     const newSteamer = new Steamer({
       name,
       shortDescription,
       description,
       price,
       weight,
-      inStock,
-      stockCount,
+      inStock: initialStock > 0,
+      stockCount: initialStock,
       imageUrl,
       videoUrl,
       category,
       storageMethod,
       ingredients,
     })
+
+    // Keep batches as the source of truth: initial stock also creates a batch,
+    // so sum(batches) equals the top-level stockCount from creation onward
+    // (enables correct FIFO draw-down in orders).
+    if (initialStock > 0) {
+      const acronym = steamerAcronym(newSteamer.name)
+      appendBatch(newSteamer, 'ST', acronym, (batchId) => ({ batchId, stockCount: initialStock }))
+    }
 
     const savedSteamer = await newSteamer.save()
     res.status(201).json(savedSteamer)
