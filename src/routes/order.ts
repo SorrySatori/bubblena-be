@@ -1,6 +1,6 @@
 import express from "express"
 import { OrderModel } from "../models/Order"
-import Product from "../models/Product"
+import Bomb from "../models/Bomb"
 import Steamer from "../models/Steamer"
 import DamagedProduct from "../models/DamagedProduct"
 import { DiscountCodeModel, IDiscountCode } from "../models/DiscountCode"
@@ -69,56 +69,92 @@ const reduceStockForItem = async (item: StockItem) => {
   }
 
   if (item.id.includes("-")) {
-    const [productId, variantWeight] = item.id.split("-")
+    const [bombId, variantWeight] = item.id.split("-")
     const weight = Number(variantWeight)
 
-    if (!productId || !Number.isFinite(weight)) {
+    if (!bombId || !Number.isFinite(weight)) {
       throw new Error(`Invalid product variant id ${item.id}`)
     }
 
-    const product = await Product.findOneAndUpdate(
-      {
-        _id: productId,
-        isDeleted: { $ne: true },
-        variants: { $elemMatch: { weight, stockCount: { $gte: item.quantity } } },
-      },
-      { $inc: { "variants.$.stockCount": -item.quantity } },
-      { new: true }
-    )
-
-    if (!product || !Array.isArray(product.variants)) {
+    // Bath bombs live in the Bomb model, with stock spread across
+    // lots → batches → variants. Draw down `quantity` pieces of this weight
+    // across batches, oldest first (FIFO).
+    const bomb: any = await Bomb.findOne({ _id: bombId, isDeleted: { $ne: true } })
+    if (!bomb) {
       throw new Error(`Insufficient stock for product variant ${item.id}`)
     }
 
-    const variant = product.variants.find((variant: any) => variant.weight === weight)
-    if (variant) {
-      variant.inStock = variant.stockCount > 0
-      await product.save()
+    const available = (bomb.lots || []).reduce(
+      (sum: number, lot: any) =>
+        sum +
+        (lot.batches || []).reduce(
+          (bs: number, batch: any) =>
+            bs +
+            (batch.variants || []).reduce(
+              (vs: number, v: any) => vs + (v.weight === weight ? v.stockCount || 0 : 0),
+              0
+            ),
+          0
+        ),
+      0
+    )
+
+    if (available < item.quantity) {
+      throw new Error(`Insufficient stock for product variant ${item.id}`)
     }
+
+    let remaining = item.quantity
+    for (const lot of bomb.lots || []) {
+      for (const batch of lot.batches || []) {
+        for (const v of batch.variants || []) {
+          if (remaining <= 0) break
+          if (v.weight !== weight) continue
+          const take = Math.min(v.stockCount || 0, remaining)
+          v.stockCount = (v.stockCount || 0) - take
+          v.inStock = v.stockCount > 0
+          remaining -= take
+        }
+      }
+    }
+
+    bomb.markModified("lots")
+    await bomb.save()
 
     return
   }
 
-  const updated = await Steamer.findOneAndUpdate(
-    {
-      _id: item.id,
-      isDeleted: { $ne: true },
-      stockCount: { $gte: item.quantity },
-    },
-    [
-      {
-        $set: {
-          stockCount: { $subtract: ["$stockCount", item.quantity] },
-          inStock: { $gt: [{ $subtract: ["$stockCount", item.quantity] }, 0] },
-        },
-      },
-    ],
-    { new: true }
-  )
-
-  if (!updated) {
+  // Steamers also carry stock in lots → batches (single weight, so stock is at
+  // batch level). Draw down `quantity` across batches oldest-first (FIFO) and
+  // keep the top-level stockCount/inStock as the aggregate of the batches.
+  const steamer: any = await Steamer.findOne({ _id: item.id, isDeleted: { $ne: true } })
+  if (!steamer) {
     throw new Error(`Insufficient stock for steamer ${item.id}`)
   }
+
+  const steamerAvailable = (steamer.lots || []).reduce(
+    (sum: number, lot: any) =>
+      sum + (lot.batches || []).reduce((bs: number, b: any) => bs + (b.stockCount || 0), 0),
+    0
+  )
+
+  if (steamerAvailable < item.quantity) {
+    throw new Error(`Insufficient stock for steamer ${item.id}`)
+  }
+
+  let steamerRemaining = item.quantity
+  for (const lot of steamer.lots || []) {
+    for (const b of lot.batches || []) {
+      if (steamerRemaining <= 0) break
+      const take = Math.min(b.stockCount || 0, steamerRemaining)
+      b.stockCount = (b.stockCount || 0) - take
+      steamerRemaining -= take
+    }
+  }
+
+  steamer.stockCount = steamerAvailable - item.quantity
+  steamer.inStock = steamer.stockCount > 0
+  steamer.markModified("lots")
+  await steamer.save()
 }
 
 const restoreStockForItem = async (item: StockItem) => {
@@ -132,25 +168,67 @@ const restoreStockForItem = async (item: StockItem) => {
   }
 
   if (item.id.includes("-")) {
-    const [productId, variantWeight] = item.id.split("-")
+    const [bombId, variantWeight] = item.id.split("-")
     const weight = Number(variantWeight)
 
-    if (!productId || !Number.isFinite(weight)) return
+    if (!bombId || !Number.isFinite(weight)) return
 
-    await Product.findOneAndUpdate(
-      { _id: productId, "variants.weight": weight },
-      {
-        $inc: { "variants.$.stockCount": item.quantity },
-        $set: { "variants.$.inStock": true },
+    // Undo a bomb draw-down: add the pieces back to the first batch that
+    // carries this weight (restores the total; used only for create rollback).
+    const bomb: any = await Bomb.findOne({ _id: bombId })
+    if (!bomb) return
+
+    let restored = false
+    for (const lot of bomb.lots || []) {
+      for (const batch of lot.batches || []) {
+        for (const v of batch.variants || []) {
+          if (v.weight === weight) {
+            v.stockCount = (v.stockCount || 0) + item.quantity
+            v.inStock = true
+            restored = true
+            break
+          }
+        }
+        if (restored) break
       }
-    )
+      if (restored) break
+    }
+
+    if (restored) {
+      bomb.markModified("lots")
+      await bomb.save()
+    }
     return
   }
 
-  await Steamer.findByIdAndUpdate(item.id, {
-    $inc: { stockCount: item.quantity },
-    $set: { inStock: true },
-  })
+  // Undo a steamer draw-down: add back to the first batch (or the top-level
+  // aggregate if the steamer has no batches yet). Used only for create rollback.
+  const steamer: any = await Steamer.findOne({ _id: item.id })
+  if (!steamer) return
+
+  let steamerRestored = false
+  for (const lot of steamer.lots || []) {
+    for (const b of lot.batches || []) {
+      b.stockCount = (b.stockCount || 0) + item.quantity
+      steamerRestored = true
+      break
+    }
+    if (steamerRestored) break
+  }
+
+  if (steamerRestored) {
+    const steamerTotal = (steamer.lots || []).reduce(
+      (sum: number, lot: any) =>
+        sum + (lot.batches || []).reduce((bs: number, b: any) => bs + (b.stockCount || 0), 0),
+      0
+    )
+    steamer.stockCount = steamerTotal
+    steamer.markModified("lots")
+  } else {
+    steamer.stockCount = (steamer.stockCount || 0) + item.quantity
+  }
+  steamer.inStock = true
+  await steamer.save()
 }
 
 const reduceStockForOrder = async (items: StockItem[]) => {
