@@ -19,8 +19,10 @@ export interface IUser extends Document {
   googleId?: string | null;
   authProvider: AuthProvider;
   emailVerified: boolean;
-  verifyToken?: string | null;
+  verifyToken?: string | null; // sha256 hex of the token sent by e-mail
   verifyTokenExpires?: Date | null;
+  // Bump to invalidate every issued JWT for this user.
+  tokenVersion: number;
   // GDPR / consumer-law evidence
   termsAcceptedAt?: Date | null;
   termsVersion?: string | null;
@@ -57,6 +59,7 @@ const UserSchema = new Schema<IUser>(
     // Likewise hidden from generic queries.
     verifyToken: { type: String, default: null, select: false },
     verifyTokenExpires: { type: Date, default: null, select: false },
+    tokenVersion: { type: Number, default: 0 },
     // When/which version of the terms the user accepted, and the marketing
     // opt-in with its timestamp (consent must be provable and revocable).
     termsAcceptedAt: { type: Date, default: null },

@@ -2,6 +2,12 @@ import express, { Request, Response } from 'express'
 import mongoose from 'mongoose'
 import DamagedProduct from '../models/DamagedProduct'
 import { apiKeyAuth } from '../middleware/apikeyAuth'
+import { pick } from '../utils/pick'
+
+const DAMAGED_FIELDS = [
+  'bathBombType', 'weight', 'price', 'damageLevel', 'stockCount', 'inStock',
+  'imageUrl', 'description', 'lotNumber', 'batchId',
+] as const
 
 const router = express.Router()
 
@@ -68,8 +74,8 @@ router.put('/:id', apiKeyAuth, async (req: Request, res: Response) => {
   try {
     const updatedProduct = await DamagedProduct.findByIdAndUpdate(
       req.params.id,
-      req.body,
-      { new: true }
+      { $set: pick(req.body, DAMAGED_FIELDS) },
+      { new: true, runValidators: true }
     )
     if (!updatedProduct) {
       return res.status(404).json({ message: 'Poškozený produkt nenalezen' })

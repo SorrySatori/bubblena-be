@@ -1,6 +1,6 @@
 import 'dotenv/config'
 import mongoose from 'mongoose'
-import Product from '../models/Product'
+import Bomb from '../models/Bomb'
 import Steamer from '../models/Steamer'
 import DamagedProduct from '../models/DamagedProduct'
 
@@ -26,7 +26,7 @@ async function run() {
   const uri = process.env.MONGODB_URI
   if (!uri) throw new Error('MONGODB_URI not set')
   await mongoose.connect(uri)
-  await backfill(Product, 'Product')
+  await backfill(Bomb, 'Bomb')
   await backfill(Steamer, 'Steamer')
   await backfill(DamagedProduct, 'DamagedProduct')
   await mongoose.disconnect()

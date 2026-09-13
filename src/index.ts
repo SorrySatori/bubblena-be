@@ -6,10 +6,8 @@ import express, { Request, Response } from 'express'
 import { connectDB } from './config/db'
 import cors from 'cors'
 import helmet from 'helmet'
-import productRoutes from './routes/productRoutes'
 import steamerRoutes from './routes/steamerRoutes'
 import damagedProductRoutes from './routes/damagedProductRoutes'
-import cartRoutes from "./routes/cartRoutes"
 import cookieParser from "cookie-parser"
 import checkoutRouter from "./routes/checkout"
 import stripeWebhookRouter from "./routes/stripeWebhook"
@@ -55,7 +53,6 @@ app.get('/', (req: Request, res: Response) => {
 })
 
 // Catalog / warehouse routers guard each handler with apiKeyAuth themselves.
-app.use('/api/products', productRoutes)
 app.use('/api/steamers', steamerRoutes)
 app.use('/api/damaged-products', damagedProductRoutes)
 app.use("/api/discount-codes", discountCodeRoutes)
@@ -67,7 +64,6 @@ app.use("/api/auth", authRoutes)
 
 // Order pipeline: every route requires the API key (the Nitro proxy and the
 // admin app both send it). Nothing here is reachable anonymously.
-app.use("/api/cart", apiKeyAuth, cartRoutes)
 app.use("/api/checkout", apiKeyAuth, checkoutRouter)
 app.use("/api/order", apiKeyAuth, ordersRouter)
 
