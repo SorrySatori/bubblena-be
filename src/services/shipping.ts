@@ -76,6 +76,19 @@ async function createGlsShipment(order: Order): Promise<ShipmentResult> {
   const point = order.selectedPickupPoint
   if (!point?.id) throw new Error("Objednávka nemá vybrané výdejní místo GLS")
 
+  // Sender (pickup) address lives in the environment, not in the repository.
+  const sender = {
+    name: process.env.GLS_SENDER_NAME || "",
+    street: process.env.GLS_SENDER_STREET || "",
+    houseNumber: process.env.GLS_SENDER_HOUSE_NUMBER || "",
+    zip: Number(process.env.GLS_SENDER_ZIP) || 0,
+    city: process.env.GLS_SENDER_CITY || "",
+    country: process.env.GLS_SENDER_COUNTRY || "CZ",
+  }
+  if (!sender.name || !sender.street || !sender.houseNumber || !sender.zip || !sender.city) {
+    throw new Error("GLS_SENDER_NAME, GLS_SENDER_STREET, GLS_SENDER_HOUSE_NUMBER, GLS_SENDER_ZIP a GLS_SENDER_CITY musí být nastaveny")
+  }
+
   const c = order.customerInfo
   const fullName = `${c.firstName} ${c.lastName}`
 
@@ -91,12 +104,12 @@ async function createGlsShipment(order: Order): Promise<ShipmentResult> {
         CODAmount: 0,
         CODCurrency: "CZK",
         PickupAddress: {
-          Name: process.env.GLS_SENDER_NAME || "Hedvika Antošová",
-          Street: process.env.GLS_SENDER_STREET || "Pobialova",
-          HouseNumber: process.env.GLS_SENDER_HOUSE_NUMBER || "23",
-          ZipCode: Number(process.env.GLS_SENDER_ZIP) || 70200,
-          City: process.env.GLS_SENDER_CITY || "Ostrava",
-          CountryIsoCode: "CZ",
+          Name: sender.name,
+          Street: sender.street,
+          HouseNumber: sender.houseNumber,
+          ZipCode: sender.zip,
+          City: sender.city,
+          CountryIsoCode: sender.country,
         },
         // ParcelShop delivery: the delivery address is the pickup point itself.
         DeliveryAddress: {

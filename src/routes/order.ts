@@ -7,6 +7,7 @@ import { HttpError, PAYMENT_SURCHARGE, SHIPPING_PRICES, priceItems, roundMoney }
 import { reduceStockForOrder } from "../services/stock"
 import { createShipmentForOrder } from "../services/shipping"
 import { cancelOrder, cancelStaleCardOrders } from "../services/orderLifecycle"
+import { orderAccessToken } from "../utils/orderToken"
 
 const router = express.Router();
 
@@ -279,7 +280,7 @@ router.post("/create", async (req, res) => {
 
     const existingOrder = await OrderModel.findOne({ orderId })
     if (existingOrder) {
-      return res.status(200).json({ success: true, order: existingOrder })
+      return res.status(200).json({ success: true, order: existingOrder, accessToken: orderAccessToken(orderId) })
     }
 
     // Prices come from the database, never from the request body.
@@ -355,7 +356,8 @@ router.post("/create", async (req, res) => {
       throw error
     }
 
-    res.status(201).json({ success: true, order: savedOrder })
+    // accessToken lets the (possibly anonymous) buyer open the confirmation page.
+    res.status(201).json({ success: true, order: savedOrder, accessToken: orderAccessToken(orderId) })
 
     // Bank transfer: confirm right away (payment is verified manually later).
     // Card: the Stripe webhook confirms once the payment is actually captured.
