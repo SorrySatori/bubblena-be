@@ -69,6 +69,9 @@ export interface Order extends Document {
   items: OrderItem[];
   totals: Totals;
   status: string;
+  paidAt?: Date | null;
+  stripeSessionId?: string | null;
+  confirmationSentAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -146,7 +149,13 @@ const OrderSchema = new Schema<Order>(
       total: Number,
     },
 
+    // pending → paid (Stripe webhook) / processing / shipped / delivered / cancelled.
+    // Bank-transfer orders stay "pending" until the admin confirms the payment.
     status: { type: String, default: "pending" },
+    paidAt: { type: Date, default: null },
+    stripeSessionId: { type: String, default: null },
+    // Set when the confirmation e-mail/invoice was handed to the storefront (idempotency).
+    confirmationSentAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

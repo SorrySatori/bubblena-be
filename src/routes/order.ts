@@ -5,7 +5,8 @@ import Steamer from "../models/Steamer"
 import DamagedProduct from "../models/DamagedProduct"
 import { DiscountCodeModel, IDiscountCode } from "../models/DiscountCode"
 import { calculateDiscount, findValidDiscountCode } from "./discountCodeRoutes"
-import { sendOrderShippedEmail } from "../utils/orderEmails"
+import { sendOrderShippedEmail, sendOrderConfirmation } from "../utils/orderEmails"
+import { HttpError, PAYMENT_SURCHARGE, SHIPPING_PRICES, priceItems, roundMoney } from "../services/pricing"
 
 const router = express.Router();
 
@@ -18,8 +19,6 @@ const toPositiveQuantity = (quantity: unknown) => {
   const parsed = Number(quantity)
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }
-
-const roundMoney = (amount: number) => Math.round(amount * 100) / 100
 
 const mergeStockItems = (items: StockItem[]) => {
   const merged = new Map<string, StockItem>()
@@ -332,7 +331,7 @@ router.patch("/:orderId/status", async (req, res) => {
       return res.status(400).json({ success: false, error: "Status is required" })
     }
     
-    const validStatuses = ["pending", "processing", "shipped", "delivered", "cancelled"]
+    const validStatuses = ["pending", "paid", "processing", "shipped", "delivered", "cancelled"]
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, error: "Invalid status" })
     }
@@ -362,27 +361,59 @@ router.patch("/:orderId/status", async (req, res) => {
   }
 })
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const PAYMENT_METHODS = Object.keys(PAYMENT_SURCHARGE)
+
+const str = (v: unknown, max = 200) => (typeof v === "string" ? v.trim().slice(0, max) : "")
+
+/** Keep only the customer fields the schema knows; everything is coerced to string. */
+const sanitizeCustomerInfo = (raw: any) => ({
+  firstName: str(raw?.firstName, 100),
+  lastName: str(raw?.lastName, 100),
+  email: str(raw?.email, 254).toLowerCase(),
+  phone: str(raw?.phone, 40),
+  address: {
+    street: str(raw?.address?.street),
+    city: str(raw?.address?.city, 100),
+    postalCode: str(raw?.address?.postalCode, 20),
+    country: str(raw?.address?.country, 60),
+  },
+  billingAddressSameAsShipping: raw?.billingAddressSameAsShipping !== false,
+})
+
 router.post("/create", async (req, res) => {
   try {
     const {
       orderId,
-      customerInfo,
-      weight,
+      customerInfo: rawCustomerInfo,
       cartId,
       userId,
       items,
       shippingMethod,
       paymentMethod,
-      totals,
+      totals: clientTotals,
       discount,
       selectedPickupPoint,
-    } = req.body
-    if (!orderId) {
+      orderNotes,
+    } = req.body || {}
+
+    if (typeof orderId !== "string" || !UUID_RE.test(orderId)) {
       return res.status(400).json({ error: "Missing required fields." })
     }
+    if (typeof shippingMethod !== "string" || !(shippingMethod in SHIPPING_PRICES)) {
+      return res.status(400).json({ error: "Neplatný způsob dopravy." })
+    }
+    if (typeof paymentMethod !== "string" || !PAYMENT_METHODS.includes(paymentMethod)) {
+      return res.status(400).json({ error: "Neplatný způsob platby." })
+    }
 
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: "Order must contain at least one item." })
+    const customerInfo = sanitizeCustomerInfo(rawCustomerInfo)
+    if (
+      !customerInfo.firstName || !customerInfo.lastName || !customerInfo.email ||
+      !customerInfo.phone || !customerInfo.address.street || !customerInfo.address.city ||
+      !customerInfo.address.postalCode
+    ) {
+      return res.status(400).json({ error: "Chybí kontaktní údaje zákazníka." })
     }
 
     const existingOrder = await OrderModel.findOne({ orderId })
@@ -390,30 +421,55 @@ router.post("/create", async (req, res) => {
       return res.status(200).json({ success: true, order: existingOrder })
     }
 
-    const orderDiscount = await getOrderDiscount(discount, totals)
-    const subtotal = roundMoney(Number(totals?.subtotal) || 0)
-    const shipping = roundMoney(Number(totals?.shipping) || 0)
-    const paymentSurcharge = roundMoney(Number(totals?.paymentSurcharge) || 0)
+    // Prices come from the database, never from the request body.
+    const priced = await priceItems(items)
+    const shipping = SHIPPING_PRICES[shippingMethod]
+    const paymentSurcharge = PAYMENT_SURCHARGE[paymentMethod]
+
+    const orderDiscount = await getOrderDiscount(discount, { subtotal: priced.subtotal, shipping })
     const totalDiscount = orderDiscount?.discount.totalDiscount || 0
     const normalizedTotals = {
-      subtotal,
+      subtotal: priced.subtotal,
       shipping,
       paymentSurcharge,
-      total: Math.max(0, roundMoney(subtotal + shipping + paymentSurcharge - totalDiscount)),
+      total: Math.max(0, roundMoney(priced.subtotal + shipping + paymentSurcharge - totalDiscount)),
     }
 
+    // The customer saw a total in the checkout; if it no longer matches (price
+    // change, stale cart), refuse rather than charge something they didn't see.
+    const clientTotal = Number(clientTotals?.total)
+    if (Number.isFinite(clientTotal) && Math.abs(clientTotal - normalizedTotals.total) > 0.01) {
+      return res.status(409).json({
+        error: "Ceny v košíku se změnily. Obnovte prosím stránku a zkontrolujte objednávku.",
+      })
+    }
+
+    const clientImageById = new Map<string, string>(
+      (Array.isArray(items) ? items : [])
+        .filter((i: any) => typeof i?.id === "string" && typeof i?.imageUrl === "string")
+        .map((i: any) => [i.id, i.imageUrl])
+    )
+    const orderItems = priced.lines.map((line) => ({
+      id: line.id,
+      name: line.name,
+      price: line.unitPrice,
+      quantity: line.quantity,
+      variant: line.weight ? { weight: line.weight } : undefined,
+      imageUrl: clientImageById.get(line.id),
+    }))
+
     const newOrder = await OrderModel.create({
-    orderId,
+      orderId,
       customerInfo,
-      items,
+      items: orderItems,
       shippingMethod,
       paymentMethod,
-      weight,
       totals: normalizedTotals,
       discount: orderDiscount?.discount,
-      cartId,
-      userId: userId || null,
+      cartId: str(cartId, 100) || null,
+      userId: str(userId, 100) || null,
       selectedPickupPoint,
+      orderNotes: str(orderNotes, 1000),
       status: "pending",
     })
     const savedOrder = await newOrder.save()
@@ -423,7 +479,7 @@ router.post("/create", async (req, res) => {
       markedDiscountCodeId = orderDiscount
         ? await markIndividualDiscountCodeUsed(orderDiscount.discountCode, orderId)
         : null
-      await reduceStockForOrder(items)
+      await reduceStockForOrder(orderItems)
     } catch (error) {
       await OrderModel.deleteOne({ orderId })
 
@@ -437,8 +493,19 @@ router.post("/create", async (req, res) => {
     }
 
     res.status(201).json({ success: true, order: savedOrder })
+
+    // Bank transfer: confirm right away (payment is verified manually later).
+    // Card: the Stripe webhook confirms once the payment is actually captured.
+    if (paymentMethod === "bank-transfer") {
+      sendOrderConfirmation(savedOrder).catch((err) =>
+        console.error(`Failed to send confirmation for order ${orderId}:`, err?.message || err)
+      )
+    }
   } catch (error: any) {
     console.error("Error creating order:", error)
+    if (error instanceof HttpError) {
+      return res.status(error.status).json({ error: error.message })
+    }
     if (error?.message?.startsWith("Insufficient stock")) {
       return res.status(409).json({ error: error.message })
     }

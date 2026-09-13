@@ -4,7 +4,6 @@ import dotenv from 'dotenv'
 dotenv.config()
 
 const MONGODB_URI = process.env.MONGODB_URI
-console.log('KEK', MONGODB_URI)
 
 if (!MONGODB_URI) {
   throw new Error('⚠️ Chybí MONGODB_URI v .env souboru')
