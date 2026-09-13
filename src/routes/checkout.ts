@@ -1,6 +1,7 @@
 import express from "express"
 import { stripe } from "../config/stripe"
 import { OrderModel } from "../models/Order"
+import { orderAccessToken } from "../utils/orderToken"
 
 const router = express.Router()
 
@@ -94,7 +95,7 @@ router.post("/create-session", async (req, res) => {
       // Stripe minimum is 30 minutes; unpaid sessions expire so stock isn't
       // held forever (see webhook for the paid path).
       expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
-      success_url: `${baseUrl}/order-confirmation?orderId=${encodeURIComponent(orderId)}`,
+      success_url: `${baseUrl}/order-confirmation?orderId=${encodeURIComponent(orderId)}&t=${encodeURIComponent(orderAccessToken(orderId))}`,
       cancel_url: `${baseUrl}/checkout?payment=cancelled`,
     })
 
