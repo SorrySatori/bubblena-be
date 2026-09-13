@@ -5,6 +5,7 @@ dotenv.config()
 import express, { Request, Response } from 'express'
 import { connectDB } from './config/db'
 import cors from 'cors'
+import helmet from 'helmet'
 import productRoutes from './routes/productRoutes'
 import steamerRoutes from './routes/steamerRoutes'
 import damagedProductRoutes from './routes/damagedProductRoutes'
@@ -24,6 +25,14 @@ import { startOrderCleanupScheduler } from './services/orderLifecycle'
 
 const app = express()
 const PORT = process.env.PORT || 3000
+
+// Render terminates TLS and forwards X-Forwarded-*; trust one hop so req.ip /
+// req.secure reflect the client, not the proxy.
+app.set('trust proxy', 1)
+
+// Security headers. CSP is off: this is a JSON API (plus one PDF label route),
+// and a document CSP would only get in the way of the PDF viewer.
+app.use(helmet({ contentSecurityPolicy: false }))
 
 // CORS: the storefront talks to this API server-side (Nitro), so browsers only
 // need CORS for the admin app. Restrict to CORS_ORIGINS when set

@@ -15,6 +15,15 @@ router.use(apiKeyAuth);
 
 const VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 h
 const JWT_TTL = "30d";
+// Bump when the obchodní podmínky / GDPR text changes materially.
+const TERMS_VERSION = process.env.TERMS_VERSION || "2026-09";
+
+/** Record (or withdraw) the marketing opt-in with a timestamp; no-op when unchanged. */
+function setMarketingConsent(user: IUser, value: unknown) {
+  if (typeof value !== "boolean" || user.marketingConsent === value) return;
+  user.marketingConsent = value;
+  user.marketingConsentAt = new Date();
+}
 
 const normalizeEmail = (email: unknown) =>
   typeof email === "string" ? email.trim().toLowerCase() : "";
@@ -37,6 +46,7 @@ function publicUser(user: IUser) {
     address: user.address || { street: "", city: "", postalCode: "", country: "CZ" },
     emailVerified: user.emailVerified,
     authProvider: user.authProvider,
+    marketingConsent: !!user.marketingConsent,
   };
 }
 
@@ -51,11 +61,16 @@ function makeVerifyToken() {
 router.post("/register", async (req: Request, res: Response) => {
   try {
     const email = normalizeEmail(req.body?.email);
-    const { password, firstName, lastName } = req.body || {};
+    const { password, firstName, lastName, acceptTerms, marketing } = req.body || {};
 
     if (!email || !password || String(password).length < 8) {
       return res.status(400).json({
         message: "E-mail a heslo (min. 8 znaků) jsou povinné.",
+      });
+    }
+    if (acceptTerms !== true) {
+      return res.status(400).json({
+        message: "Pro registraci je nutný souhlas s obchodními podmínkami a zásadami ochrany osobních údajů.",
       });
     }
 
@@ -82,6 +97,9 @@ router.post("/register", async (req: Request, res: Response) => {
       existing.lastName = lastName ?? existing.lastName;
       existing.verifyToken = verifyToken;
       existing.verifyTokenExpires = verifyTokenExpires;
+      existing.termsAcceptedAt = new Date();
+      existing.termsVersion = TERMS_VERSION;
+      setMarketingConsent(existing, marketing);
       await existing.save();
       return res.status(200).json({ email: existing.email, verifyToken });
     }
@@ -96,6 +114,10 @@ router.post("/register", async (req: Request, res: Response) => {
       emailVerified: false,
       verifyToken,
       verifyTokenExpires,
+      termsAcceptedAt: new Date(),
+      termsVersion: TERMS_VERSION,
+      marketingConsent: marketing === true,
+      marketingConsentAt: marketing === true ? new Date() : null,
     });
 
     return res.status(201).json({ email: user.email, verifyToken });
@@ -178,7 +200,7 @@ router.post("/google", async (req: Request, res: Response) => {
       return res.status(503).json({ message: "Přihlášení přes Google není nakonfigurováno." });
     }
 
-    const { credential } = req.body || {};
+    const { credential, marketing } = req.body || {};
     if (!credential) {
       return res.status(400).json({ message: "Chybí Google credential." });
     }
@@ -199,6 +221,11 @@ router.post("/google", async (req: Request, res: Response) => {
       if (!user.emailVerified) user.emailVerified = true;
       if (!user.firstName && payload.given_name) user.firstName = payload.given_name;
       if (!user.lastName && payload.family_name) user.lastName = payload.family_name;
+      if (!user.termsAcceptedAt) {
+        user.termsAcceptedAt = new Date();
+        user.termsVersion = TERMS_VERSION;
+      }
+      if (marketing === true) setMarketingConsent(user, true);
       await user.save();
     } else {
       user = await UserModel.create({
@@ -208,6 +235,11 @@ router.post("/google", async (req: Request, res: Response) => {
         emailVerified: true,
         firstName: payload.given_name || "",
         lastName: payload.family_name || "",
+        // The sign-in page states that continuing with Google accepts the terms.
+        termsAcceptedAt: new Date(),
+        termsVersion: TERMS_VERSION,
+        marketingConsent: marketing === true,
+        marketingConsentAt: marketing === true ? new Date() : null,
       });
     }
 
@@ -236,8 +268,9 @@ router.patch("/me", requireAuth, async (req: Request, res: Response) => {
     const user = await UserModel.findById(req.userId);
     if (!user) return res.status(404).json({ message: "Uživatel nenalezen." });
 
-    const { firstName, lastName, phone, address } = req.body || {};
+    const { firstName, lastName, phone, address, marketingConsent } = req.body || {};
     if (typeof firstName === "string") user.firstName = firstName;
+    setMarketingConsent(user, marketingConsent);
     if (typeof lastName === "string") user.lastName = lastName;
     if (typeof phone === "string") user.phone = phone;
     if (address && typeof address === "object") {
