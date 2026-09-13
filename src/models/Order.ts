@@ -29,6 +29,7 @@ export interface SelectedPickupPoint {
   name: string;
   city: string;
   street: string;
+  houseNumber?: string;
   zip: string;
   country: string;
   url?: string;
@@ -56,6 +57,17 @@ export interface OrderDiscount {
   totalDiscount: number;
 }
 
+export type ShipmentStatus = "none" | "creating" | "created" | "failed";
+
+export interface Shipment {
+  provider?: "zasilkovna" | "gls" | null;
+  status: ShipmentStatus;
+  externalId?: string | null;   // Packeta barcode / GLS parcel number
+  labelBase64?: string | null;  // GLS label PDF (select: false)
+  error?: string | null;
+  createdAt?: Date | null;
+}
+
 export interface Order extends Document {
   cartId?: string | null;
   userId?: string | null;
@@ -72,6 +84,9 @@ export interface Order extends Document {
   paidAt?: Date | null;
   stripeSessionId?: string | null;
   confirmationSentAt?: Date | null;
+  cancelledAt?: Date | null;
+  cancelReason?: string | null;
+  shipment?: Shipment;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -115,6 +130,7 @@ const OrderSchema = new Schema<Order>(
       name: String,
       city: String,
       street: String,
+      houseNumber: String,
       zip: String,
       country: String,
       url: String,
@@ -156,6 +172,20 @@ const OrderSchema = new Schema<Order>(
     stripeSessionId: { type: String, default: null },
     // Set when the confirmation e-mail/invoice was handed to the storefront (idempotency).
     confirmationSentAt: { type: Date, default: null },
+    cancelledAt: { type: Date, default: null },
+    cancelReason: { type: String, default: null },
+
+    // Carrier shipment, created only after payment (webhook) or when the admin
+    // confirms a bank transfer. `status` doubles as an idempotency lock.
+    shipment: {
+      provider: { type: String, enum: ["zasilkovna", "gls", null], default: null },
+      status: { type: String, enum: ["none", "creating", "created", "failed"], default: "none" },
+      externalId: { type: String, default: null },
+      // Label PDFs are large; fetch explicitly via GET /order/:id/shipment/label.
+      labelBase64: { type: String, default: null, select: false },
+      error: { type: String, default: null },
+      createdAt: { type: Date, default: null },
+    },
   },
   { timestamps: true }
 );

@@ -12,8 +12,6 @@ import cartRoutes from "./routes/cartRoutes"
 import cookieParser from "cookie-parser"
 import checkoutRouter from "./routes/checkout"
 import stripeWebhookRouter from "./routes/stripeWebhook"
-import packetaRoutes from "./routes/packeta"
-import glsRoutes from "./routes/gls"
 import ordersRouter from "./routes/order"
 import discountCodeRoutes from "./routes/discountCodeRoutes"
 import bombRoutes from "./routes/bombRoutes"
@@ -22,6 +20,7 @@ import recipeRoutes from "./routes/recipeRoutes"
 import productionRoutes from "./routes/productionRoutes"
 import authRoutes from "./routes/auth"
 import { apiKeyAuth } from './middleware/apikeyAuth'
+import { startOrderCleanupScheduler } from './services/orderLifecycle'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -61,11 +60,11 @@ app.use("/api/auth", authRoutes)
 // admin app both send it). Nothing here is reachable anonymously.
 app.use("/api/cart", apiKeyAuth, cartRoutes)
 app.use("/api/checkout", apiKeyAuth, checkoutRouter)
-app.use("/api/packeta", apiKeyAuth, packetaRoutes)
-app.use("/api/gls", apiKeyAuth, glsRoutes)
 app.use("/api/order", apiKeyAuth, ordersRouter)
 
 connectDB().then(() => {
+  // Cancel abandoned card orders (restores stock + discount codes).
+  startOrderCleanupScheduler()
   app.listen(PORT, () => {
     console.log(`🚀 Server běží na http://localhost:${PORT}`)
   })

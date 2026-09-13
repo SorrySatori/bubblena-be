@@ -3,6 +3,7 @@ import type Stripe from "stripe"
 import { stripe } from "../config/stripe"
 import { OrderModel } from "../models/Order"
 import { sendOrderConfirmation } from "../utils/orderEmails"
+import { createShipmentForOrder } from "../services/shipping"
 
 const router = express.Router()
 
@@ -51,6 +52,16 @@ router.post("/", async (req, res) => {
           sendOrderConfirmation(order).catch((err) =>
             console.error(`Failed to send confirmation for order ${orderId}:`, err?.message || err)
           )
+          createShipmentForOrder(orderId).catch((err) =>
+            console.error(`Failed to create shipment for order ${orderId}:`, err?.message || err)
+          )
+        } else {
+          const existing = await OrderModel.findOne({ orderId }, { status: 1 })
+          if (existing?.status === "cancelled") {
+            // Should not happen (sessions expire after 30 min, cleanup after 60),
+            // but if it does the customer paid for a cancelled order → refund manually.
+            console.error(`PAYMENT RECEIVED FOR CANCELLED ORDER ${orderId} (session ${session.id}) – refund needed`)
+          }
         }
       }
     }

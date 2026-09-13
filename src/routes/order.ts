@@ -1,251 +1,14 @@
 import express from "express"
 import { OrderModel } from "../models/Order"
-import Bomb from "../models/Bomb"
-import Steamer from "../models/Steamer"
-import DamagedProduct from "../models/DamagedProduct"
 import { DiscountCodeModel, IDiscountCode } from "../models/DiscountCode"
 import { calculateDiscount, findValidDiscountCode } from "./discountCodeRoutes"
 import { sendOrderShippedEmail, sendOrderConfirmation } from "../utils/orderEmails"
 import { HttpError, PAYMENT_SURCHARGE, SHIPPING_PRICES, priceItems, roundMoney } from "../services/pricing"
+import { reduceStockForOrder } from "../services/stock"
+import { createShipmentForOrder } from "../services/shipping"
+import { cancelOrder, cancelStaleCardOrders } from "../services/orderLifecycle"
 
 const router = express.Router();
-
-type StockItem = {
-  id: string
-  quantity: number
-}
-
-const toPositiveQuantity = (quantity: unknown) => {
-  const parsed = Number(quantity)
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
-}
-
-const mergeStockItems = (items: StockItem[]) => {
-  const merged = new Map<string, StockItem>()
-
-  for (const item of items) {
-    const quantity = toPositiveQuantity(item.quantity)
-    if (!item.id || quantity === null) {
-      throw new Error("Invalid order item quantity")
-    }
-
-    const existing = merged.get(item.id)
-    if (existing) {
-      existing.quantity += quantity
-    } else {
-      merged.set(item.id, { id: item.id, quantity })
-    }
-  }
-
-  return Array.from(merged.values())
-}
-
-const reduceStockForItem = async (item: StockItem) => {
-  if (item.id.startsWith("damaged-")) {
-    const damagedId = item.id.replace("damaged-", "")
-    const updated = await DamagedProduct.findOneAndUpdate(
-      {
-        _id: damagedId,
-        isDeleted: { $ne: true },
-        stockCount: { $gte: item.quantity },
-      },
-      [
-        {
-          $set: {
-            stockCount: { $subtract: ["$stockCount", item.quantity] },
-            inStock: { $gt: [{ $subtract: ["$stockCount", item.quantity] }, 0] },
-          },
-        },
-      ],
-      { new: true }
-    )
-
-    if (!updated) {
-      throw new Error(`Insufficient stock for damaged product ${damagedId}`)
-    }
-
-    return
-  }
-
-  if (item.id.includes("-")) {
-    const [bombId, variantWeight] = item.id.split("-")
-    const weight = Number(variantWeight)
-
-    if (!bombId || !Number.isFinite(weight)) {
-      throw new Error(`Invalid product variant id ${item.id}`)
-    }
-
-    // Bath bombs live in the Bomb model, with stock spread across
-    // lots → batches → variants. Draw down `quantity` pieces of this weight
-    // across batches, oldest first (FIFO).
-    const bomb: any = await Bomb.findOne({ _id: bombId, isDeleted: { $ne: true } })
-    if (!bomb) {
-      throw new Error(`Insufficient stock for product variant ${item.id}`)
-    }
-
-    const available = (bomb.lots || []).reduce(
-      (sum: number, lot: any) =>
-        sum +
-        (lot.batches || []).reduce(
-          (bs: number, batch: any) =>
-            bs +
-            (batch.variants || []).reduce(
-              (vs: number, v: any) => vs + (v.weight === weight ? v.stockCount || 0 : 0),
-              0
-            ),
-          0
-        ),
-      0
-    )
-
-    if (available < item.quantity) {
-      throw new Error(`Insufficient stock for product variant ${item.id}`)
-    }
-
-    let remaining = item.quantity
-    for (const lot of bomb.lots || []) {
-      for (const batch of lot.batches || []) {
-        for (const v of batch.variants || []) {
-          if (remaining <= 0) break
-          if (v.weight !== weight) continue
-          const take = Math.min(v.stockCount || 0, remaining)
-          v.stockCount = (v.stockCount || 0) - take
-          v.inStock = v.stockCount > 0
-          remaining -= take
-        }
-      }
-    }
-
-    bomb.markModified("lots")
-    await bomb.save()
-
-    return
-  }
-
-  // Steamers also carry stock in lots → batches (single weight, so stock is at
-  // batch level). Draw down `quantity` across batches oldest-first (FIFO) and
-  // keep the top-level stockCount/inStock as the aggregate of the batches.
-  const steamer: any = await Steamer.findOne({ _id: item.id, isDeleted: { $ne: true } })
-  if (!steamer) {
-    throw new Error(`Insufficient stock for steamer ${item.id}`)
-  }
-
-  const steamerAvailable = (steamer.lots || []).reduce(
-    (sum: number, lot: any) =>
-      sum + (lot.batches || []).reduce((bs: number, b: any) => bs + (b.stockCount || 0), 0),
-    0
-  )
-
-  if (steamerAvailable < item.quantity) {
-    throw new Error(`Insufficient stock for steamer ${item.id}`)
-  }
-
-  let steamerRemaining = item.quantity
-  for (const lot of steamer.lots || []) {
-    for (const b of lot.batches || []) {
-      if (steamerRemaining <= 0) break
-      const take = Math.min(b.stockCount || 0, steamerRemaining)
-      b.stockCount = (b.stockCount || 0) - take
-      steamerRemaining -= take
-    }
-  }
-
-  steamer.stockCount = steamerAvailable - item.quantity
-  steamer.inStock = steamer.stockCount > 0
-  steamer.markModified("lots")
-  await steamer.save()
-}
-
-const restoreStockForItem = async (item: StockItem) => {
-  if (item.id.startsWith("damaged-")) {
-    const damagedId = item.id.replace("damaged-", "")
-    await DamagedProduct.findByIdAndUpdate(damagedId, {
-      $inc: { stockCount: item.quantity },
-      $set: { inStock: true },
-    })
-    return
-  }
-
-  if (item.id.includes("-")) {
-    const [bombId, variantWeight] = item.id.split("-")
-    const weight = Number(variantWeight)
-
-    if (!bombId || !Number.isFinite(weight)) return
-
-    // Undo a bomb draw-down: add the pieces back to the first batch that
-    // carries this weight (restores the total; used only for create rollback).
-    const bomb: any = await Bomb.findOne({ _id: bombId })
-    if (!bomb) return
-
-    let restored = false
-    for (const lot of bomb.lots || []) {
-      for (const batch of lot.batches || []) {
-        for (const v of batch.variants || []) {
-          if (v.weight === weight) {
-            v.stockCount = (v.stockCount || 0) + item.quantity
-            v.inStock = true
-            restored = true
-            break
-          }
-        }
-        if (restored) break
-      }
-      if (restored) break
-    }
-
-    if (restored) {
-      bomb.markModified("lots")
-      await bomb.save()
-    }
-    return
-  }
-
-  // Undo a steamer draw-down: add back to the first batch (or the top-level
-  // aggregate if the steamer has no batches yet). Used only for create rollback.
-  const steamer: any = await Steamer.findOne({ _id: item.id })
-  if (!steamer) return
-
-  let steamerRestored = false
-  for (const lot of steamer.lots || []) {
-    for (const b of lot.batches || []) {
-      b.stockCount = (b.stockCount || 0) + item.quantity
-      steamerRestored = true
-      break
-    }
-    if (steamerRestored) break
-  }
-
-  if (steamerRestored) {
-    const steamerTotal = (steamer.lots || []).reduce(
-      (sum: number, lot: any) =>
-        sum + (lot.batches || []).reduce((bs: number, b: any) => bs + (b.stockCount || 0), 0),
-      0
-    )
-    steamer.stockCount = steamerTotal
-    steamer.markModified("lots")
-  } else {
-    steamer.stockCount = (steamer.stockCount || 0) + item.quantity
-  }
-  steamer.inStock = true
-  await steamer.save()
-}
-
-const reduceStockForOrder = async (items: StockItem[]) => {
-  const stockItems = mergeStockItems(items)
-  const reducedItems: StockItem[] = []
-
-  try {
-    for (const item of stockItems) {
-      await reduceStockForItem(item)
-      reducedItems.push(item)
-    }
-  } catch (error) {
-    for (const item of reducedItems.reverse()) {
-      await restoreStockForItem(item)
-    }
-    throw error
-  }
-}
 
 const getOrderDiscount = async (
   discount: { code?: string } | undefined,
@@ -326,31 +89,56 @@ router.patch("/:orderId/status", async (req, res) => {
   try {
     const { orderId } = req.params
     const { status } = req.body
-    
+
     if (!status) {
       return res.status(400).json({ success: false, error: "Status is required" })
     }
-    
+
     const validStatuses = ["pending", "paid", "processing", "shipped", "delivered", "cancelled"]
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, error: "Invalid status" })
     }
-    
+
     const existing = await OrderModel.findOne({ orderId })
     if (!existing) {
       return res.status(404).json({ success: false, error: "Order not found" })
     }
 
-    const wasShipped = existing.status === "shipped"
-    existing.status = status
-    existing.updatedAt = new Date()
-    const order = await existing.save()
+    const previous = existing.status
 
+    if (status === "cancelled" && previous !== "cancelled") {
+      // Cancelling an unfulfilled order gives stock + discount code back.
+      // From shipped/delivered we only flip the status (goods already left).
+      const restocked = await cancelOrder(orderId, "admin")
+      if (!restocked) {
+        existing.status = "cancelled"
+        existing.cancelledAt = new Date()
+        existing.cancelReason = "admin"
+        await existing.save()
+      }
+    } else {
+      existing.status = status
+      if (status === "paid" && !existing.paidAt) existing.paidAt = new Date()
+      await existing.save()
+    }
+
+    const order = await OrderModel.findOne({ orderId })
     res.status(200).json({ success: true, order })
 
-    // On transition into "shipped" (Odesláno), notify the customer by e-mail.
-    // Fire-and-forget — never let an e-mail failure affect the status update.
-    if (status === "shipped" && !wasShipped) {
+    // Side effects run after the response; a failure never blocks the status change.
+    if (status === "paid" && previous !== "paid") {
+      // Bank transfer confirmed by the admin → confirmation was already sent at
+      // creation; only the shipment is pending.
+      createShipmentForOrder(orderId).catch((err) =>
+        console.error(`Failed to create shipment for order ${orderId}:`, err?.message || err)
+      )
+    } else if (status === "processing" && previous !== "processing") {
+      createShipmentForOrder(orderId).catch((err) =>
+        console.error(`Failed to create shipment for order ${orderId}:`, err?.message || err)
+      )
+    }
+
+    if (status === "shipped" && previous !== "shipped" && order) {
       sendOrderShippedEmail(order).catch((err) =>
         console.error(`Failed to send shipped e-mail for order ${orderId}:`, err?.message || err)
       )
@@ -361,12 +149,79 @@ router.patch("/:orderId/status", async (req, res) => {
   }
 })
 
+// POST create (or retry) the carrier shipment for a paid order – admin action.
+router.post("/:orderId/shipment", async (req, res) => {
+  try {
+    const result = await createShipmentForOrder(req.params.orderId)
+    const order = await OrderModel.findOne({ orderId: req.params.orderId })
+    if (result.outcome === "created") return res.status(200).json({ success: true, order, ...result })
+    if (result.outcome === "skipped") return res.status(409).json({ success: false, error: result.reason, order })
+    return res.status(502).json({ success: false, error: result.error, order })
+  } catch (error: any) {
+    console.error("Error creating shipment:", error)
+    res.status(500).json({ success: false, error: "Internal server error" })
+  }
+})
+
+// GET the carrier label PDF (GLS returns one; Packeta labels are printed in their portal).
+router.get("/:orderId/shipment/label", async (req, res) => {
+  try {
+    const order = await OrderModel.findOne({ orderId: req.params.orderId }).select("+shipment.labelBase64")
+    const label = order?.shipment?.labelBase64
+    if (!order || !label) {
+      return res.status(404).json({ success: false, error: "Štítek není k dispozici" })
+    }
+    res.setHeader("Content-Type", "application/pdf")
+    res.setHeader("Content-Disposition", `inline; filename="stitek-${order.orderId}.pdf"`)
+    res.send(Buffer.from(label, "base64"))
+  } catch (error: any) {
+    console.error("Error fetching label:", error)
+    res.status(500).json({ success: false, error: "Internal server error" })
+  }
+})
+
+// POST cancel abandoned card orders (for an external cron; also runs in-process).
+router.post("/cleanup", async (_req, res) => {
+  try {
+    const cancelled = await cancelStaleCardOrders()
+    res.status(200).json({ success: true, cancelled })
+  } catch (error: any) {
+    console.error("Error running order cleanup:", error)
+    res.status(500).json({ success: false, error: "Internal server error" })
+  }
+})
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const PAYMENT_METHODS = Object.keys(PAYMENT_SURCHARGE)
 
 const str = (v: unknown, max = 200) => (typeof v === "string" ? v.trim().slice(0, max) : "")
 
 /** Keep only the customer fields the schema knows; everything is coerced to string. */
+/**
+ * Normalize the pickup point from either widget. Packeta v6 sends
+ * { id, name, street, city, zip, country, ... }; the GLS map sends
+ * { pclshopid, name, address, city, zipcode, ctrcode, ... }.
+ */
+const sanitizePickupPoint = (raw: any) => {
+  if (!raw || typeof raw !== "object") return null
+  const id = str(raw.id ?? raw.pclshopid, 100)
+  if (!id) return null
+  return {
+    id,
+    name: str(raw.name, 200),
+    street: str(raw.street ?? raw.address, 200),
+    houseNumber: str(raw.houseNumber, 20),
+    zip: str(raw.zip ?? raw.zipcode, 20),
+    city: str(raw.city, 100),
+    country: str(raw.country ?? raw.ctrcode, 10) || "CZ",
+    url: str(raw.url, 500),
+    place: str(raw.place, 200),
+    branchCode: str(raw.branchCode, 50),
+    routingCode: str(raw.routingCode, 50),
+    routingName: str(raw.routingName, 100),
+  }
+}
+
 const sanitizeCustomerInfo = (raw: any) => ({
   firstName: str(raw?.firstName, 100),
   lastName: str(raw?.lastName, 100),
@@ -393,7 +248,7 @@ router.post("/create", async (req, res) => {
       paymentMethod,
       totals: clientTotals,
       discount,
-      selectedPickupPoint,
+      selectedPickupPoint: rawPickupPoint,
       orderNotes,
     } = req.body || {}
 
@@ -405,6 +260,12 @@ router.post("/create", async (req, res) => {
     }
     if (typeof paymentMethod !== "string" || !PAYMENT_METHODS.includes(paymentMethod)) {
       return res.status(400).json({ error: "Neplatný způsob platby." })
+    }
+
+    // Both carriers deliver to a pickup point; without one no shipment can be made.
+    const selectedPickupPoint = sanitizePickupPoint(rawPickupPoint)
+    if (!selectedPickupPoint) {
+      return res.status(400).json({ error: "Vyberte prosím výdejní místo." })
     }
 
     const customerInfo = sanitizeCustomerInfo(rawCustomerInfo)
