@@ -3,6 +3,12 @@ import mongoose from 'mongoose'
 import Steamer from '../models/Steamer'
 import { apiKeyAuth } from '../middleware/apikeyAuth'
 import { appendBatch, steamerAcronym } from '../utils/batching'
+import { pick } from '../utils/pick'
+
+const STEAMER_FIELDS = [
+  'name', 'shortDescription', 'description', 'price', 'weight', 'stockCount', 'inStock',
+  'imageUrl', 'videoUrl', 'category', 'storageMethod', 'ingredients', 'lots',
+] as const
 
 const router = express.Router()
 
@@ -85,8 +91,8 @@ router.put('/:id', apiKeyAuth, async (req: Request, res: Response) => {
   try {
     const updatedSteamer = await Steamer.findByIdAndUpdate(
       req.params.id,
-      req.body,
-      { new: true }
+      { $set: pick(req.body, STEAMER_FIELDS), $inc: { __v: 1 } },
+      { new: true, runValidators: true }
     )
     if (!updatedSteamer) {
       return res.status(404).json({ message: 'Steamer nenalezen' })

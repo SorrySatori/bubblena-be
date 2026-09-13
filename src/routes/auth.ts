@@ -14,7 +14,7 @@ const router = express.Router();
 router.use(apiKeyAuth);
 
 const VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 h
-const JWT_TTL = "30d";
+const JWT_TTL = "14d";
 // Bump when the obchodní podmínky / GDPR text changes materially.
 const TERMS_VERSION = process.env.TERMS_VERSION || "2026-09";
 
@@ -31,9 +31,19 @@ const normalizeEmail = (email: unknown) =>
 function signToken(user: IUser): string {
   const secret = process.env.JWT_SECRET;
   if (!secret) throw new Error("JWT_SECRET není nastaven");
-  return jwt.sign({ sub: String(user._id), email: user.email }, secret, {
-    expiresIn: JWT_TTL,
-  });
+  return jwt.sign(
+    { sub: String(user._id), email: user.email, ver: user.tokenVersion ?? 0 },
+    secret,
+    { expiresIn: JWT_TTL }
+  );
+}
+
+const hashToken = (token: string) => crypto.createHash("sha256").update(token).digest("hex");
+
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
 }
 
 function publicUser(user: IUser) {
@@ -50,9 +60,12 @@ function publicUser(user: IUser) {
   };
 }
 
+/** Plain token goes into the e-mail link; only its hash is stored. */
 function makeVerifyToken() {
+  const verifyToken = crypto.randomBytes(32).toString("hex");
   return {
-    verifyToken: crypto.randomBytes(32).toString("hex"),
+    verifyToken,
+    verifyTokenHash: hashToken(verifyToken),
     verifyTokenExpires: new Date(Date.now() + VERIFY_TOKEN_TTL_MS),
   };
 }
@@ -78,33 +91,29 @@ router.post("/register", async (req: Request, res: Response) => {
       "+passwordHash +verifyToken +verifyTokenExpires"
     );
 
+    // Anti-enumeration: every branch answers 200 with the same shape. Nitro
+    // sends either the verification link (`verifyToken` set) or an
+    // "an account with this e-mail already exists" notice (`kind` = exists/google).
     if (existing) {
-      // Already a usable local account → tell them to log in.
       if (existing.passwordHash && existing.emailVerified) {
-        return res.status(409).json({ message: "Účet s tímto e-mailem už existuje. Přihlaste se." });
+        return res.status(200).json({ email: existing.email, verifyToken: null, kind: "exists" });
       }
-      // Registered via Google only → guide them to Google login.
       if (existing.authProvider === "google" && !existing.passwordHash) {
-        return res.status(409).json({
-          message: "Tento e-mail je registrován přes Google. Přihlaste se přes Google.",
-          provider: "google",
-        });
+        return res.status(200).json({ email: existing.email, verifyToken: null, kind: "google" });
       }
-      // Local but never verified → refresh password + token and resend the email.
-      const { verifyToken, verifyTokenExpires } = makeVerifyToken();
-      existing.passwordHash = await bcrypt.hash(String(password), 10);
-      existing.firstName = firstName ?? existing.firstName;
-      existing.lastName = lastName ?? existing.lastName;
-      existing.verifyToken = verifyToken;
+      // Local but never verified → keep the original password, just re-issue
+      // the verification link (a stranger must not be able to reset it).
+      const { verifyToken, verifyTokenHash, verifyTokenExpires } = makeVerifyToken();
+      existing.verifyToken = verifyTokenHash;
       existing.verifyTokenExpires = verifyTokenExpires;
       existing.termsAcceptedAt = new Date();
       existing.termsVersion = TERMS_VERSION;
       setMarketingConsent(existing, marketing);
       await existing.save();
-      return res.status(200).json({ email: existing.email, verifyToken });
+      return res.status(200).json({ email: existing.email, verifyToken, kind: "verify" });
     }
 
-    const { verifyToken, verifyTokenExpires } = makeVerifyToken();
+    const { verifyToken, verifyTokenHash, verifyTokenExpires } = makeVerifyToken();
     const user = await UserModel.create({
       email,
       passwordHash: await bcrypt.hash(String(password), 10),
@@ -112,7 +121,7 @@ router.post("/register", async (req: Request, res: Response) => {
       lastName: lastName || "",
       authProvider: "local",
       emailVerified: false,
-      verifyToken,
+      verifyToken: verifyTokenHash,
       verifyTokenExpires,
       termsAcceptedAt: new Date(),
       termsVersion: TERMS_VERSION,
@@ -120,7 +129,7 @@ router.post("/register", async (req: Request, res: Response) => {
       marketingConsentAt: marketing === true ? new Date() : null,
     });
 
-    return res.status(201).json({ email: user.email, verifyToken });
+    return res.status(201).json({ email: user.email, verifyToken, kind: "verify" });
   } catch (error) {
     console.error("Register error:", error);
     return res.status(500).json({ message: "Registrace se nezdařila." });
@@ -137,7 +146,7 @@ router.post("/verify", async (req: Request, res: Response) => {
     }
 
     const user = await UserModel.findOne({ email }).select("+verifyToken +verifyTokenExpires");
-    if (!user || !user.verifyToken || user.verifyToken !== token) {
+    if (!user || !user.verifyToken || !safeEqual(user.verifyToken, hashToken(String(token)))) {
       return res.status(400).json({ message: "Neplatný ověřovací odkaz." });
     }
     if (user.verifyTokenExpires && user.verifyTokenExpires.getTime() < Date.now()) {
@@ -165,14 +174,10 @@ router.post("/login", async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Zadejte e-mail a heslo." });
     }
 
+    // Same answer whether the account is missing, Google-only or the password
+    // is wrong – otherwise the form doubles as an e-mail directory.
     const user = await UserModel.findOne({ email }).select("+passwordHash");
     if (!user || !user.passwordHash) {
-      if (user && user.authProvider === "google") {
-        return res.status(401).json({
-          message: "Tento e-mail je registrován přes Google. Přihlaste se přes Google.",
-          provider: "google",
-        });
-      }
       return res.status(401).json({ message: "Nesprávný e-mail nebo heslo." });
     }
 

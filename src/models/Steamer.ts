@@ -64,6 +64,7 @@ const SteamerSchema: Schema<ISteamer> = new Schema(
   },
   {
     timestamps: true,
+    optimisticConcurrency: true,
   }
 )
 

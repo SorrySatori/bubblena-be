@@ -1,3 +1,4 @@
+import mongoose from "mongoose"
 import Bomb from "../models/Bomb"
 import Steamer from "../models/Steamer"
 import DamagedProduct from "../models/DamagedProduct"
@@ -225,13 +226,29 @@ export const restoreStockForItem = async (item: StockItem) => {
   await steamer.save()
 }
 
+/**
+ * Bomb/Steamer stock is read-modify-write on the whole document; with
+ * optimisticConcurrency on the schema a concurrent change makes save() throw
+ * VersionError. Re-read and retry a few times before giving up.
+ */
+const withVersionRetry = async (fn: () => Promise<void>, attempts = 4) => {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn()
+    } catch (err) {
+      if (!(err instanceof mongoose.Error.VersionError) || i >= attempts) throw err
+      await new Promise((r) => setTimeout(r, 25 * i))
+    }
+  }
+}
+
 export const reduceStockForOrder = async (items: StockItem[]) => {
   const stockItems = mergeStockItems(items)
   const reducedItems: StockItem[] = []
 
   try {
     for (const item of stockItems) {
-      await reduceStockForItem(item)
+      await withVersionRetry(() => reduceStockForItem(item))
       reducedItems.push(item)
     }
   } catch (error) {
@@ -246,7 +263,7 @@ export const reduceStockForOrder = async (items: StockItem[]) => {
 export const restoreStockForOrder = async (items: StockItem[]) => {
   for (const item of mergeStockItems(items)) {
     try {
-      await restoreStockForItem(item)
+      await withVersionRetry(() => restoreStockForItem(item))
     } catch (err: any) {
       console.error(`Failed to restore stock for ${item.id}:`, err?.message || err)
     }

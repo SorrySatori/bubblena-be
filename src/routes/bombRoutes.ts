@@ -1,44 +1,11 @@
 import express, { Request, Response } from 'express'
+import mongoose from 'mongoose'
 import Bomb from '../models/Bomb'
-import Product from '../models/Product'
+import { pick } from '../utils/pick'
 import { apiKeyAuth } from '../middleware/apikeyAuth'
 import { appendBatch } from '../utils/batching'
 
 const router = express.Router()
-
-// POST migrate products to bombs (one-time use)
-router.post('/migrate-from-products', apiKeyAuth, async (req: Request, res: Response) => {
-  try {
-    const existingBombs = await Bomb.countDocuments()
-    if (existingBombs > 0) {
-      return res.status(400).json({ message: 'Bombs collection is not empty. Migration skipped to avoid duplicates.' })
-    }
-
-    const products = await Product.find({ isDeleted: { $ne: true } })
-
-    const generateAcronym = (name: string): string => {
-      return name.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 4)
-    }
-
-    const bombs = products.map((product) => ({
-      name: product.name,
-      acronym: generateAcronym(product.name),
-      shortDescription: product.shortDescription || '',
-      description: product.description || '',
-      lots: [],
-      storageMethod: product.storageMethod || '',
-      imageUrl: product.imageUrl,
-      videoUrl: product.videoUrl,
-      bathImageUrl: product.bathImageUrl,
-      isDeleted: false,
-    }))
-
-    const inserted = await Bomb.insertMany(bombs)
-    res.status(201).json({ message: `Migrated ${inserted.length} products to bombs`, bombs: inserted })
-  } catch (err) {
-    res.status(500).json({ message: 'Migration failed', error: err })
-  }
-})
 
 // GET all bombs
 router.get('/', apiKeyAuth, async (req: Request, res: Response) => {
@@ -53,7 +20,14 @@ router.get('/', apiKeyAuth, async (req: Request, res: Response) => {
 // GET single bomb by ID
 router.get('/:id', apiKeyAuth, async (req: Request, res: Response) => {
   try {
-    const bomb = await Bomb.findOne({ _id: req.params.id, isDeleted: { $ne: true } })
+    const id = String(req.params.id)
+    let bomb = null
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      bomb = await Bomb.findOne({ _id: id, isDeleted: { $ne: true } })
+    }
+    if (!bomb) {
+      bomb = await Bomb.findOne({ slug: id, isDeleted: { $ne: true } })
+    }
     if (!bomb) {
       return res.status(404).json({ message: 'Bomba nenalezena' })
     }
@@ -63,31 +37,16 @@ router.get('/:id', apiKeyAuth, async (req: Request, res: Response) => {
   }
 })
 
+// Fields an admin may set. Never: _id, slug (derived), isDeleted, timestamps, __v.
+const BOMB_FIELDS = [
+  'name', 'acronym', 'shortDescription', 'description', 'pricing', 'lots',
+  'imageUrl', 'bathImageUrl', 'videoUrl', 'storageMethod', 'ingredients',
+] as const
+
 // POST
 router.post('/', apiKeyAuth, async (req: Request, res: Response) => {
-  const {
-    name,
-    shortDescription,
-    description,
-    lots,
-    imageUrl,
-    storageMethod,
-    bathImageUrl,
-    videoUrl,
-  } = req.body
-
   try {
-    const newBomb = new Bomb({
-      name,
-      shortDescription,
-      description,
-      lots,
-      imageUrl,
-      storageMethod,
-      bathImageUrl,
-      videoUrl,
-    })
-
+    const newBomb = new Bomb(pick(req.body, BOMB_FIELDS))
     const savedBomb = await newBomb.save()
     res.status(201).json(savedBomb)
   } catch (err) {
@@ -98,10 +57,13 @@ router.post('/', apiKeyAuth, async (req: Request, res: Response) => {
 // PUT
 router.put('/:id', apiKeyAuth, async (req: Request, res: Response) => {
   try {
+    const update = pick(req.body, BOMB_FIELDS)
+    // Bump the version so a concurrent order save() (optimistic concurrency)
+    // notices the stock changed under it.
     const updatedBomb = await Bomb.findByIdAndUpdate(
       req.params.id,
-      req.body,
-      { new: true }
+      { $set: update, $inc: { __v: 1 } },
+      { new: true, runValidators: true }
     )
     if (!updatedBomb) {
       return res.status(404).json({ message: 'Bomba nenalezena' })

@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose'
+import { attachSlugHook } from '../utils/slug'
 
 export interface BombVariant {
   weight: number;
@@ -27,6 +28,7 @@ export interface BombPricing {
 export interface IBomb extends Document {
   _id: mongoose.Types.ObjectId;
   name: string;
+  slug?: string;
   acronym: string;
   shortDescription?: string;
   description: string;
@@ -35,6 +37,7 @@ export interface IBomb extends Document {
   videoUrl?: string;
   category?: string;
   storageMethod?: string;
+  ingredients?: string;
   pricing: BombPricing[];
   lots: BombLot[];
   createdAt?: string;
@@ -45,6 +48,7 @@ export interface IBomb extends Document {
 const BombSchema: Schema<IBomb> = new Schema(
   {
     name: { type: String, required: true },
+    slug: { type: String, index: true },
     acronym: { type: String, required: true },
     shortDescription: { type: String, required: true },
     description: { type: String, required: true },
@@ -73,6 +77,8 @@ const BombSchema: Schema<IBomb> = new Schema(
       },
     ],
     storageMethod: { type: String, required: true },
+    // INCI list shown on the product page.
+    ingredients: { type: String, default: '' },
     imageUrl: { type: String },
     videoUrl: { type: String },
     bathImageUrl: { type: String },
@@ -80,7 +86,12 @@ const BombSchema: Schema<IBomb> = new Schema(
   },
   {
     timestamps: true,
+    // Stock lives inside `lots`; save() must fail (VersionError) when another
+    // request changed the document in between, instead of overwriting it.
+    optimisticConcurrency: true,
   }
 )
+
+attachSlugHook(BombSchema, 'name')
 
 export default mongoose.model<IBomb>('Bomb', BombSchema)
