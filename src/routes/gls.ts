@@ -11,29 +11,16 @@ function hashPassword(password: string): number[] {
   return Array.from(new Uint8Array(hash));
 }
 
-// Quick self-test endpoint to verify auth without a full shipment
-async function testGlsAuth(username: string, password: string, glsApiUrl: string) {
-  const payload = {
-    Username: username,
-    Password: hashPassword(password),
-    ParcelList: [],
-  }
-  const response = await axios.post(glsApiUrl, payload, {
-    headers: { "Content-Type": "application/json" }
-  })
-  return response.data
-}
-
 router.post("/create-shipment", async (req, res) => {
   const { customerInfo, selectedPickupPoint, totals, orderId } = req.body
   try {
-    const clientNumber = Number(process.env.GLS_CLIENT_NUMBER) || 53013682
+    const clientNumber = Number(process.env.GLS_CLIENT_NUMBER)
     const password = process.env.GLS_API_PASSWORD
     const username = process.env.GLS_API_USERNAME
     const glsApiUrl = process.env.GLS_API_URL || 'https://api.mygls.cz/ParcelService.svc/json/PrepareLabels'
 
-    if (!password || !username) {
-      throw new Error('GLS_API_USERNAME and GLS_API_PASSWORD must be set in environment')
+    if (!password || !username || !clientNumber) {
+      throw new Error('GLS_API_USERNAME, GLS_API_PASSWORD and GLS_CLIENT_NUMBER must be set in environment')
     }
     const payload = {
     Username: username,
@@ -78,7 +65,6 @@ router.post("/create-shipment", async (req, res) => {
     }],
     WebshopEngine: "CustomNodeJSApp",
   }
-  console.log('REQUEST', JSON.stringify(payload, null, 2))
 
     const response = await axios.post(
     glsApiUrl,
@@ -87,7 +73,6 @@ router.post("/create-shipment", async (req, res) => {
         headers: { "Content-Type": "application/json" }
       }
     );
-    console.log("GLS API odpověď:", response.data)
     res.status(200).send({
       success: true,
       parcelNumber: response.data?.Parcels?.[0]?.ParcelNumber,
@@ -104,33 +89,5 @@ router.post("/create-shipment", async (req, res) => {
     });
   }
 });
-
-// Debug endpoint to test auth against both prod and test GLS APIs
-router.get("/test-auth", async (req, res) => {
-  const password = process.env.GLS_API_PASSWORD || '24M0IK18Ojy1GQxtf36kRlXsgZMj0p88'
-  const username = process.env.GLS_API_USERNAME || 'info@bubblena.cz'
-
-  const urls = [
-    'https://api.mygls.cz/ParcelService.svc/json/PrepareLabels',
-    'https://api.test.mygls.cz/ParcelService.svc/json/PrepareLabels',
-  ]
-
-  const results: any[] = []
-  for (const url of urls) {
-    try {
-      const data = await testGlsAuth(username, password, url)
-      results.push({ url, status: 'ok', data })
-    } catch (error: any) {
-      results.push({
-        url,
-        status: 'error',
-        data: error.response?.data || error.message
-      })
-    }
-  }
-
-  console.log('GLS auth test results:', JSON.stringify(results, null, 2))
-  res.json({ username, passwordHash: hashPassword(password).slice(0, 5).join(',') + '...', results })
-})
 
 export default router;
