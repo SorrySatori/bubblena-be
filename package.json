@@ -13,30 +13,31 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "axios": "^1.13.2",
+    "axios": "^1.20.0",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.1",
-    "express": "^5.1.0",
-    "google-auth-library": "^10.6.2",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "google-auth-library": "^10.9.1",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^8.16.5",
+    "mongoose": "^8.24.4",
     "stripe": "^19.3.0",
-    "uuid": "^11.1.0",
+    "uuid": "^11.1.1",
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
-    "@types/cookie-parser": "^1.4.9",
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/dotenv": "^8.2.3",
-    "@types/express": "^5.0.3",
+    "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/mongoose": "^5.11.97",
-    "@types/node": "^24.2.0",
+    "@types/node": "^24.13.4",
     "@types/xml2js": "^0.4.14",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.9.3"
   }
 }

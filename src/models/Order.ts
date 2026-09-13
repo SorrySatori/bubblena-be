@@ -86,6 +86,8 @@ export interface Order extends Document {
   confirmationSentAt?: Date | null;
   cancelledAt?: Date | null;
   cancelReason?: string | null;
+  termsAcceptedAt?: Date | null;
+  termsVersion?: string | null;
   shipment?: Shipment;
   createdAt: Date;
   updatedAt: Date;
@@ -174,6 +176,9 @@ const OrderSchema = new Schema<Order>(
     confirmationSentAt: { type: Date, default: null },
     cancelledAt: { type: Date, default: null },
     cancelReason: { type: String, default: null },
+    // Submitting the order accepts the terms (stated next to the submit button).
+    termsAcceptedAt: { type: Date, default: null },
+    termsVersion: { type: String, default: null },
 
     // Carrier shipment, created only after payment (webhook) or when the admin
     // confirms a bank transfer. `status` doubles as an idempotency lock.

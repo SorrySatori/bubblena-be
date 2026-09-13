@@ -21,6 +21,11 @@ export interface IUser extends Document {
   emailVerified: boolean;
   verifyToken?: string | null;
   verifyTokenExpires?: Date | null;
+  // GDPR / consumer-law evidence
+  termsAcceptedAt?: Date | null;
+  termsVersion?: string | null;
+  marketingConsent: boolean;
+  marketingConsentAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -52,6 +57,12 @@ const UserSchema = new Schema<IUser>(
     // Likewise hidden from generic queries.
     verifyToken: { type: String, default: null, select: false },
     verifyTokenExpires: { type: Date, default: null, select: false },
+    // When/which version of the terms the user accepted, and the marketing
+    // opt-in with its timestamp (consent must be provable and revocable).
+    termsAcceptedAt: { type: Date, default: null },
+    termsVersion: { type: String, default: null },
+    marketingConsent: { type: Boolean, default: false },
+    marketingConsentAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

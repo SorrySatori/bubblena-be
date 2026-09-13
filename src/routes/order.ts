@@ -332,6 +332,8 @@ router.post("/create", async (req, res) => {
       selectedPickupPoint,
       orderNotes: str(orderNotes, 1000),
       status: "pending",
+      termsAcceptedAt: new Date(),
+      termsVersion: process.env.TERMS_VERSION || "2026-09",
     })
     const savedOrder = await newOrder.save()
 
